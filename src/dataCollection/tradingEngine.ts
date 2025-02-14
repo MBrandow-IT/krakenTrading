@@ -392,19 +392,6 @@ export class TradingEngine {
         }
 
         try {
-            const result = await executeQueryWithRetry(
-                `SELECT ID, peak_price FROM Trades
-                 WHERE symbol = '${symbol}' 
-                 AND closed_at IS NULL 
-                 AND test_case = ${process.env.TEST_CASE} 
-                 AND portfolio_ID = ${this.config.portfolio_ID}`
-            );
-            
-            if (!result.recordset.length) {
-                this.activePositions.delete(symbol);
-                this.portfolio.positions.delete(symbol);
-                return;
-            }
 
             const currentIndicators = this.indicators.get(symbol);
             if (!currentIndicators) {
@@ -419,7 +406,7 @@ export class TradingEngine {
 
             // Update peak price logic
             if (recentClosePrice) {
-                const dbPeakPrice = result.recordset[0].peak_price;
+                const dbPeakPrice = position.peakPrice > recentClosePrice ? position.peakPrice : recentClosePrice;
                 position.peakPrice = Math.max(
                     recentClosePrice,
                     dbPeakPrice || position.peakPrice || recentClosePrice

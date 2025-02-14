@@ -59,7 +59,7 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 26,
     maxAtrPercent: null,
-    active: true,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
@@ -83,7 +83,7 @@ export const meanReversionConfig: TradingConfig = {
     volumeSpikeBarCount: 30,   // Longer volume lookback
     volumeSpikeFactor: 1.3,
     volatilityLookback: 50,    // Longer volatility lookback for trends
-    max_position_size: 0.06,
+    max_position_size: 0.22,
     max_positions: 4,          // Fewer positions for trend following
     maxVolatility: 1.5,        // Lower volatility threshold for trends
     minAtrPercent: 0.3,        // Minimum ATR for trend confirmation
@@ -94,9 +94,9 @@ export const meanReversionConfig: TradingConfig = {
     minimumRequiredCandles: 50,
     maxAtrPercent: null,
     active: true,
-    tradeOnKraken: false,
-    tradeBalance: 10000,
-    paperTrade: true,
+    tradeOnKraken: true,
+    tradeBalance: 10,
+    paperTrade: false,
   };
   
   export const longTrendFollowingConfig: TradingConfig = {
@@ -126,7 +126,7 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: false,
     minimumRequiredCandles: 100,
     maxAtrPercent: null,
-    active: true,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
@@ -160,7 +160,7 @@ export const meanReversionConfig: TradingConfig = {
     minHoldTimeMinutes: 1,        // Quick exits allowed
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 13,
-    active: true,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
@@ -194,7 +194,7 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 26,
     maxAtrPercent: null,
-    active: true,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
