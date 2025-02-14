@@ -1,0 +1,29 @@
+{
+  "name": "krakentrading",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/mssql": "^9.1.7",
+    "@types/node": "^22.13.2",
+    "@typescript-eslint/eslint-plugin": "^8.24.0",
+    "@typescript-eslint/parser": "^8.24.0",
+    "eslint": "^9.20.1",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@types/ws": "^8.5.14",
+    "dotenv": "^16.4.7",
+    "mssql": "^11.0.1",
+    "ts-node": "^10.9.2",
+    "ws": "^8.18.0"
+  }
+}
