@@ -416,44 +416,49 @@ export class TradingEngine {
                 const netPnl = grossPnl - totalFees;
                 const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
                 
-    
-                const result = await executeQuery(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
-                const trade_id = result.recordset[0].ID
-
-
-                const closedTrade = []
-                closedTrade.push({
-                    symbol: symbol,
-                    status: 'closed',
-                    exit_price: recentClosePrice,
-                    Closed_At: new Date().toISOString(),
-                    pnl: netPnl,
-                    reason: reason,
-                    pnl_percentage: netPnlPercentage,
-                    ID: trade_id
-                })
-    
-                // Update database
                 try {
-                    await updateTableRecords('trades', closedTrade)
+                    const result = await executeQuery(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
+                    const trade_id = result.recordset[0].ID
                     
-                    console.log(`[${symbol}] Position closed:`, {
-                        entryPrice: position.entryPrice,
-                        exitPrice: recentClosePrice,
-                        grossPnl: grossPnl,
-                        fees: totalFees,
-                        netPnl: netPnl,
-                        netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
-                        strategy: position.strategy,
-                        reason: reason
-                    });
+                    
+                    const closedTrade = []
+                    closedTrade.push({
+                        symbol: symbol,
+                        status: 'closed',
+                        exit_price: recentClosePrice,
+                        Closed_At: new Date().toISOString(),
+                        pnl: netPnl,
+                        reason: reason,
+                        pnl_percentage: netPnlPercentage,
+                        ID: trade_id
+                    })
+                    
+                    // Update database
+                    try {
+                        await updateTableRecords('trades', closedTrade)
+                        
+                        console.log(`[${symbol}] Position closed:`, {
+                            entryPrice: position.entryPrice,
+                            exitPrice: recentClosePrice,
+                            grossPnl: grossPnl,
+                            fees: totalFees,
+                            netPnl: netPnl,
+                            netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
+                            strategy: position.strategy,
+                            reason: reason
+                        });
+                    } catch (error) {
+                        console.error('Error updating trade:', error);
+                        // Rollback portfolio changes if DB update fails
+                        
+                    }
                 } catch (error) {
                     console.error('Error updating trade:', error);
-                    // Rollback portfolio changes if DB update fails
-                    
                 }
-            } else {
-                const recentClosePrice = this.lastCandle.get(symbol)?.close;
+                
+            }
+        } else {
+            if (this.config.paperTrade) {
                 if (!recentClosePrice) {
                     return;
                 }
@@ -469,10 +474,11 @@ export class TradingEngine {
                 const netPnl = grossPnl - totalFees;
                 const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
     
-                const result = await executeQuery(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
-                const trade_id = result.recordset[0].ID
-                let peak_price = result.recordset[0].peak_price
-                if (recentClosePrice > peak_price) {
+                try {
+                    const result = await executeQuery(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
+                    const trade_id = result.recordset[0].ID
+                    let peak_price: number | undefined = result.recordset[0].peak_price
+                if (!peak_price || recentClosePrice > peak_price) {
                     peak_price = recentClosePrice
                 }
                 const updateTrade = []
@@ -486,10 +492,12 @@ export class TradingEngine {
                 try {
                     await updateTableRecords('trades', updateTrade)
                 } catch (error) {
+                    console.error('Error updating trade: SELECT ID, peak_price FROM Trades WHERE symbol = ' + symbol + ' AND closed_at IS NULL AND test_case = ' + process.env.TEST_CASE + ' AND portfolio_ID = ' + this.config.portfolio_ID, error);
+                }
+                } catch (error) {
                     console.error('Error updating trade:', error);
                 }
             }
-
         }
     }
     private async createPosition(symbol: string): Promise<Position | undefined> {
@@ -558,6 +566,8 @@ export class TradingEngine {
                     entry_price: recentClosePrice,
                     amount: positionSize,
                     Opened_At: new Date().toISOString(),
+                    notes: this.config.strategyType,
+                    test_case: process.env.TEST_CASE
                 })
 
                 try {
