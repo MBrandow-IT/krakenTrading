@@ -25,6 +25,10 @@ export interface TradingConfig {
     minimumRequiredCandles: number;
     maxAtrPercent: number | null;
     portfolio_ID: number;
+    active: boolean;
+    tradeOnKraken: boolean;
+    tradeBalance: number;
+    paperTrade: boolean;
 }
 
 export const meanReversionConfig: TradingConfig = {
@@ -54,6 +58,10 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 26,
     maxAtrPercent: null,
+    active: true,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
   };
   
   // Trend Following with Multiple Timeframes
@@ -84,6 +92,10 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: false,
     minimumRequiredCandles: 50,
     maxAtrPercent: null,
+    active: true,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
   };
   
   export const longTrendFollowingConfig: TradingConfig = {
@@ -113,6 +125,10 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: false,
     minimumRequiredCandles: 100,
     maxAtrPercent: null,
+    active: true,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
   };
   
   // Momentum Scalping Strategy
@@ -143,6 +159,10 @@ export const meanReversionConfig: TradingConfig = {
     minHoldTimeMinutes: 1,        // Quick exits allowed
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 13,
+    active: true,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
   };
   
   // Volatility Breakout Strategy
@@ -173,4 +193,8 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 26,
     maxAtrPercent: null,
-  };
+    active: true,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
+  };  

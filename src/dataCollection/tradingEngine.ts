@@ -1,9 +1,9 @@
+import KrakenClient from 'kraken-api';
 import { TradingConfig } from '../config/tradingConfigurations';
 import { executeQuery } from '../database/sqlconnection';
 import { insertTableRecords, updateTableRecords } from '../database/tableActions';
 import { analyzeEntry } from '../exitsEntries/enter';
 import { analyzeExit } from '../exitsEntries/exits';
-import { portfolio } from '../portfolio/portfolio';
 import { KrakenWebSocket } from './krakenWebSocket';
 
 interface Candle {
@@ -73,7 +73,6 @@ export class TradingEngine {
     private websockets: Map<string[], KrakenWebSocket>;
     private lastCandle: Map<string, Candle>;
     private candleBuffer: Map<string, Candle[]>;
-    private accountBalance?: number;
     private portfolio: Portfolio;
 
     constructor(config: TradingConfig) {
@@ -83,10 +82,16 @@ export class TradingEngine {
         this.websockets = new Map();
         this.lastCandle = new Map();
         this.candleBuffer = new Map();  // Store recent candles for indicators
-        this.portfolio = portfolio();
+        this.portfolio = {
+            balance: 0,
+            positions: new Map(),
+            availableBalance: 0
+        }
     }
 
-    async initialize(symbols: string[]): Promise<void> {
+    async initialize(symbols: string[], portfolioBalance: Portfolio): Promise<void> {
+        this.portfolio = portfolioBalance;
+
         // Fetch historical data for each symbol first
         for (const symbol of symbols) {
             try {
@@ -107,9 +112,16 @@ export class TradingEngine {
                         close: parseFloat(ohlc[4]),
                         volume: parseFloat(ohlc[6])
                     }))
-                    .slice(-this.config.minimumRequiredCandles); // Only keep required number of candles
+                    .slice(-this.config.minimumRequiredCandles - 1); // Get one extra candle to account for in-progress
 
+                // Remove the last candle since it's in-progress
+                const inProgressCandle = historicalCandles.pop();
                 this.candleBuffer.set(symbol, historicalCandles);
+                
+                // Store the in-progress candle as the last candle
+                if (inProgressCandle) {
+                    this.lastCandle.set(symbol, inProgressCandle);
+                }
                 
                 // Initialize indicators with historical data
                 this.indicators.set(symbol, {
@@ -152,9 +164,6 @@ export class TradingEngine {
 
     private handleWebSocketMessage(symbols: string[], data: any): void {
         if (data.channel === 'ohlc') {
-            // console.log(`[WebSocket] Received ${data.type} data with ${data.data.length} candles`);
-            
-            // Handle both snapshot and updates
             const candleEvents = data.data;
             
             for (const candleData of candleEvents) {
@@ -167,8 +176,7 @@ export class TradingEngine {
                     volume,
                     interval_begin
                 } = candleData;
-
-
+                
                 const candle: Candle = {
                     timestamp: interval_begin,
                     open: parseFloat(open),
@@ -178,32 +186,35 @@ export class TradingEngine {
                     volume: parseFloat(volume)
                 };
 
-                // Add to buffer if it matches our interval
-                // console.log(`[${symbol}] Alignment check:`, {
-                //     intervalMinutes: this.config.intervalMinutes,
-                //     intervalSeconds,
-                //     isAlignedWithInterval,
-                //     remainder: timestamp % intervalSeconds
-                // });
-
-                if (candle.timestamp !== this.lastCandle.get(symbol)?.timestamp) {
-                    // console.log(`[${symbol}] Processing ${data.type} candle:`, {
-                    //     time: candle.timestamp,
-                    //     close: candle.close,
-                    //     volume: candle.volume
-                    // });
-                    
-                    if (data.type === 'snapshot') {
+                const lastCandle = this.lastCandle.get(symbol);
+                
+                if (lastCandle) {
+                    if (candle.timestamp > lastCandle.timestamp) {
+                        // New candle period has started
                         const buffer = this.candleBuffer.get(symbol) || [];
-                        buffer.push(candle);
+                        buffer.push(lastCandle);
+                        
+                        while (buffer.length > this.config.minimumRequiredCandles) {
+                            buffer.shift();
+                        }
+                        
                         this.candleBuffer.set(symbol, buffer);
                         this.lastCandle.set(symbol, candle);
-                        // console.log(`[${symbol}] Added to buffer. New size: ${buffer.length}`);
-                    } else {
-                        this.updateCandle(symbol, candle);
+                        
+                        // Only update indicators on new candle period
+                        this.updateIndicators(symbol, buffer);
+                    } else if (candle.timestamp === lastCandle.timestamp) {
+                        // Only update if there's a meaningful change in the candle
+                        if (
+                            candle.high !== lastCandle.high ||
+                            candle.low !== lastCandle.low ||
+                            candle.close !== lastCandle.close ||
+                            candle.volume !== lastCandle.volume
+                        ) {
+                            this.lastCandle.set(symbol, candle);
+                            // Don't update indicators here as the candle isn't complete
+                        }
                     }
-                } else {
-                    // console.log(`[${symbol}] Skipping candle - not aligned with interval`);
                 }
             }
         } else if (data.channel === 'trade') {
@@ -229,34 +240,9 @@ export class TradingEngine {
                     timestamp: unixTimestamp
                 };
 
-                // console.log(`[${symbol}] Received trade:`, {
-                //     price: trade.price,
-                //     volume: trade.volume,
-                //     time: new Date(trade.timestamp * 1000).toISOString(),
-                //     side,
-                //     orderType: ord_type,
-                //     tradeId: trade_id
-                // });
-
                 this.updateTrades(symbol, trade.price);
             }
         }
-    }
-
-    private updateCandle(symbol: string, candle: Candle): void {
-        this.lastCandle.set(symbol, candle);
-        const buffer = this.candleBuffer.get(symbol) || [];
-        buffer.push(candle);
-        
-        // Log buffer status
-        // console.log(`[${symbol}] Candle buffer size: ${buffer.length}/${this.config.minimumRequiredCandles}`);
-        
-        while (buffer.length > this.config.minimumRequiredCandles) {
-            buffer.shift();
-        }
-        this.candleBuffer.set(symbol, buffer);
-
-        this.updateIndicators(symbol, buffer);
     }
 
     private updateIndicators(symbol: string, candles: Candle[]): void {
@@ -283,19 +269,6 @@ export class TradingEngine {
             ),
             atr: this.calculateATR(candles, this.config.volatilityLookback),
         };
-
-        console.log(`[${symbol}] Updated indicators:`)
-        //     rsi: currentIndicators.rsi,
-        //     macd: {
-        //         macd: currentIndicators.macd.macd[currentIndicators.macd.macd.length - 1],
-        //         signal: currentIndicators.macd.signal[currentIndicators.macd.signal.length - 1],
-        //         histogram: currentIndicators.macd.histogram[currentIndicators.macd.histogram.length - 1]
-        //     },
-        //     volumeSpike: currentIndicators.volumeSpike,
-        //     sma: currentIndicators.sma,
-        //     volatilitySpike: currentIndicators.volatilitySpike,
-        //     atr: currentIndicators.atr
-        // });
 
         this.indicators.set(symbol, currentIndicators as unknown as Indicators);
         this.updateTrades(symbol)
@@ -415,6 +388,10 @@ export class TradingEngine {
 
         const {shouldExit, reason} = analyzeExit(position, currentIndicators, this.config, recentClosePrice);
         if (shouldExit && recentClosePrice) {
+            
+            if (this.config.tradeOnKraken) {
+                await this.postKrakenTrade(symbol, position.quantity, 'sell');
+            }
             // Basic PnL before fees
             const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
             
@@ -423,91 +400,96 @@ export class TradingEngine {
             const entryFee = position.entryPrice * position.quantity * feeRate;
             const exitFee = recentClosePrice * position.quantity * feeRate;
             const totalFees = entryFee + exitFee;
-            
-            // Net PnL after fees
-            const netPnl = grossPnl - totalFees;
-            const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
-            
-            // Update portfolio
+
             this.portfolio.balance += (recentClosePrice * position.quantity) - exitFee;
             this.portfolio.availableBalance = this.portfolio.balance;
             this.portfolio.positions.delete(symbol);
             this.activePositions.delete(symbol);
+            this.portfolio.balance -= (recentClosePrice * position.quantity);
+            this.portfolio.availableBalance = this.portfolio.balance;
+            this.portfolio.positions.set(symbol, position);
+            this.activePositions.set(symbol, position);
 
-            const result = await executeQuery(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
-            const trade_id = result.recordset[0].ID
-
-            const closedTrade = []
-            closedTrade.push({
-                symbol: symbol,
-                status: 'closed',
-                exit_price: recentClosePrice,
-                Closed_At: new Date().toISOString(),
-                pnl: netPnl,
-                reason: reason,
-                pnl_percentage: netPnlPercentage,
-                ID: trade_id
-            })
-
-            // Update database
-            try {
-                await updateTableRecords('trades', closedTrade)
+            if (this.config.paperTrade) {
                 
-                console.log(`[${symbol}] Position closed:`, {
-                    entryPrice: position.entryPrice,
-                    exitPrice: recentClosePrice,
-                    grossPnl: grossPnl,
-                    fees: totalFees,
-                    netPnl: netPnl,
-                    netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
-                    strategy: position.strategy,
-                    reason: reason
-                });
-            } catch (error) {
-                console.error('Error updating trade:', error);
-                // Rollback portfolio changes if DB update fails
-                this.portfolio.balance -= (recentClosePrice * position.quantity);
-                this.portfolio.availableBalance = this.portfolio.balance;
-                this.portfolio.positions.set(symbol, position);
-                this.activePositions.set(symbol, position);
-            }
-        } else {
-            const recentClosePrice = this.lastCandle.get(symbol)?.close;
-            if (!recentClosePrice) {
-                return;
-            }
-            const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
-            
-            // Calculate fees (using 0.26% as worst case scenario, adjust based on your fee tier)
-            const feeRate = 0.0026; // 0.26%
-            const entryFee = position.entryPrice * position.quantity * feeRate;
-            const exitFee = recentClosePrice * position.quantity * feeRate;
-            const totalFees = entryFee + exitFee;
-            
-            // Net PnL after fees
-            const netPnl = grossPnl - totalFees;
-            const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
+                // Net PnL after fees
+                const netPnl = grossPnl - totalFees;
+                const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
+                
+    
+                const result = await executeQuery(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
+                const trade_id = result.recordset[0].ID
 
-            const result = await executeQuery(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
-            const trade_id = result.recordset[0].ID
-            let peak_price = result.recordset[0].peak_price
-            if (recentClosePrice > peak_price) {
-                peak_price = recentClosePrice
-            }
-            const updateTrade = []
 
-            updateTrade.push({
-                ID: trade_id,
-                pnl: netPnl,
-                pnl_percentage: netPnlPercentage,
-                peak_price: peak_price
-            })
-
-            try {
-                await updateTableRecords('trades', updateTrade)
-            } catch (error) {
-                console.error('Error updating trade:', error);
+                const closedTrade = []
+                closedTrade.push({
+                    symbol: symbol,
+                    status: 'closed',
+                    exit_price: recentClosePrice,
+                    Closed_At: new Date().toISOString(),
+                    pnl: netPnl,
+                    reason: reason,
+                    pnl_percentage: netPnlPercentage,
+                    ID: trade_id
+                })
+    
+                // Update database
+                try {
+                    await updateTableRecords('trades', closedTrade)
+                    
+                    console.log(`[${symbol}] Position closed:`, {
+                        entryPrice: position.entryPrice,
+                        exitPrice: recentClosePrice,
+                        grossPnl: grossPnl,
+                        fees: totalFees,
+                        netPnl: netPnl,
+                        netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
+                        strategy: position.strategy,
+                        reason: reason
+                    });
+                } catch (error) {
+                    console.error('Error updating trade:', error);
+                    // Rollback portfolio changes if DB update fails
+                    
+                }
+            } else {
+                const recentClosePrice = this.lastCandle.get(symbol)?.close;
+                if (!recentClosePrice) {
+                    return;
+                }
+                const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
+                
+                // Calculate fees (using 0.26% as worst case scenario, adjust based on your fee tier)
+                const feeRate = 0.0026; // 0.26%
+                const entryFee = position.entryPrice * position.quantity * feeRate;
+                const exitFee = recentClosePrice * position.quantity * feeRate;
+                const totalFees = entryFee + exitFee;
+                
+                // Net PnL after fees
+                const netPnl = grossPnl - totalFees;
+                const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
+    
+                const result = await executeQuery(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL`)
+                const trade_id = result.recordset[0].ID
+                let peak_price = result.recordset[0].peak_price
+                if (recentClosePrice > peak_price) {
+                    peak_price = recentClosePrice
+                }
+                const updateTrade = []
+    
+                updateTrade.push({
+                    ID: trade_id,
+                    pnl: netPnl,
+                    pnl_percentage: netPnlPercentage,
+                    peak_price: peak_price
+                })
+                try {
+                    await updateTableRecords('trades', updateTrade)
+                } catch (error) {
+                    console.error('Error updating trade:', error);
+                }
             }
+
         }
     }
     private async createPosition(symbol: string): Promise<Position | undefined> {
@@ -536,56 +518,76 @@ export class TradingEngine {
         if (shouldEnter) {
             const positionSize = this.calculatePositionSize(indicator, this.config, this.portfolio.balance, recentClosePrice)
             
-            // Create new position object
-            console.log(`[${symbol}] Creating position:`, {
+            if (this.config.tradeOnKraken) {
+                await this.postKrakenTrade(symbol, positionSize, 'buy');
+            }
+
+            if (this.config.paperTrade) {
+                // Create new position object
+                console.log(`[${symbol}] Creating position:`, {
                 entryPrice: recentClosePrice,
                 quantity: positionSize,
                 strategy: this.config.strategyType,
                 entryTime: new Date()
-            });
-            const newPosition: Position = {
-                entryPrice: recentClosePrice,
-                quantity: positionSize,
-                strategy: this.config.strategyType, // You might want to make this dynamic based on the entry signal
-                entryTime: new Date(),
-                order: {
-                    price: recentClosePrice,
-                    quantity: positionSize
-                }
-            };
+                });
+                const newPosition: Position = {
+                    entryPrice: recentClosePrice,
+                    quantity: positionSize,
+                    strategy: this.config.strategyType, // You might want to make this dynamic based on the entry signal
+                    entryTime: new Date(),
+                    order: {
+                        price: recentClosePrice,
+                        quantity: positionSize
+                    }
+                };
 
-            // Update local portfolio state
-            this.portfolio.positions.set(symbol, newPosition);
-            this.portfolio.balance -= (recentClosePrice * positionSize);
-            this.portfolio.availableBalance = this.portfolio.balance;
-            this.activePositions.set(symbol, newPosition);
-
-            // TODO: post Kraken Trade first
-            const newTrade = []
-            newTrade.push({
-                portfolio_ID: this.config.portfolio_ID,
-                symbol: symbol,
-                coin_id: symbol,
-                type: 'long',
-                status: 'open',
-                entry_price: recentClosePrice,
-                amount: positionSize,
-                Opened_At: new Date().toISOString(),
-            })
-
-            try {
-                await insertTableRecords('trades', newTrade)
-                return newPosition;
-            } catch (error) {
-                console.error('Error inserting trade:', error);
-                // Rollback local portfolio changes if DB insert fails
-                this.portfolio.positions.delete(symbol);
-                this.portfolio.balance += (recentClosePrice * positionSize);
+                // Update local portfolio state
+                this.portfolio.positions.set(symbol, newPosition);
+                this.portfolio.balance -= (recentClosePrice * positionSize);
                 this.portfolio.availableBalance = this.portfolio.balance;
+                this.activePositions.set(symbol, newPosition);
+
+                // TODO: post Kraken Trade first
+                const newTrade = []
+                newTrade.push({
+                    portfolio_ID: this.config.portfolio_ID,
+                    symbol: symbol,
+                    coin_id: symbol,
+                    type: 'long',
+                    status: 'open',
+                    entry_price: recentClosePrice,
+                    amount: positionSize,
+                    Opened_At: new Date().toISOString(),
+                })
+
+                try {
+                    await insertTableRecords('trades', newTrade)
+                    return newPosition;
+                } catch (error) {
+                    console.error('Error inserting trade:', error);
+                    // Rollback local portfolio changes if DB insert fails
+                    this.portfolio.positions.delete(symbol);
+                    this.portfolio.balance += (recentClosePrice * positionSize);
+                    this.portfolio.availableBalance = this.portfolio.balance;
+                }
             }
         }
-
         return;
+    }
+
+    private async postKrakenTrade(symbol: string, quantity: number, type: 'buy' | 'sell'): Promise<void> {
+        const kraken = new KrakenClient(
+            process.env.KRAKEN_API_KEY || '',
+            process.env.KRAKEN_API_SECRET || ''
+        );
+
+        const result = await kraken.api('AddOrder', {
+            pair: symbol,
+            type: type,
+            ordertype: 'market',
+            volume: quantity
+        });
+        console.log(`[${symbol}] Kraken trade posted:`, result);
     }
 
     private calculatePositionSize = (indicator: Indicators, config: TradingConfig, accountBalance: number, current_price: number) => {
@@ -613,14 +615,6 @@ export class TradingEngine {
             positionSize,
             maxPositionByAccount / current_price
         );
-    
-        // 6. Log calculations for debugging
-        // console.log({
-        //     maxPositionByAccount: maxPositionByAccount / current_price,
-        //     positionSizeByRisk,
-        //     volatilityAdjustment,
-        //     finalPositionSize
-        // });
         
         return finalPositionSize;
     }

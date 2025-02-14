@@ -96,10 +96,6 @@ const scalpingEntry = (indicator: Indicators, config: TradingConfig, recentClose
 
 const volatilityBreakoutEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice: number) => {
   
-  // Enter on volatility expansion with volume confirmation
-  // console.log('indicator.volumeSpike', indicator.volumeSpike)
-  // console.log('indicator.volatilitySpike', indicator.volatilitySpike)
-  // console.log('config.volatilityThreshold', config.volatilityThreshold)
   if (indicator.volumeSpike && (indicator.volatilitySpike)) {
 
     console.log('indicator.rsi', indicator.rsi)

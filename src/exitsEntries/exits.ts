@@ -38,10 +38,6 @@ export const analyzeExit = (position: Position, indicators: Indicators, config: 
         const atrPercent = (indicators.atr/recentClosePrice)*100;
         stopLossPct = Math.max(3*atrPercent, config.stopLossPct);
         takeProfitPct = Math.max(6*atrPercent, config.takeProfitPct);
-
-        // console.log('stopLossPct', stopLossPct)
-        // console.log('takeProfitPct', takeProfitPct)
-
     }
 
     if (current_pnl_percentage >= takeProfitPct) {
