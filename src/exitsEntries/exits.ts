@@ -2,7 +2,7 @@ import { Position } from "../dataCollection/tradingEngine";
 import { Indicators } from "../dataCollection/tradingEngine";
 import { TradingConfig } from "../config/tradingConfigurations";
 
-export const analyzeExit = (position: Position, indicators: Indicators, config: TradingConfig, recentClosePrice?: number): {shouldExit: boolean, reason: string} => {
+export const analyzeExit = (position: Position, indicators: Indicators, config: TradingConfig, recentClosePrice?: number, peakPrice?: number): {shouldExit: boolean, reason: string} => {
     const { entryPrice, entryTime } = position;
 
     if (!recentClosePrice) {
@@ -48,17 +48,28 @@ export const analyzeExit = (position: Position, indicators: Indicators, config: 
         return {shouldExit: true, reason: 'stopLoss'};
     }
 
+    // Add trailing stop loss check
+    if (config.trailingStopLoss && peakPrice) {
+        const trailingStopPct = ((recentClosePrice - peakPrice) / peakPrice) * 100;
+        if (trailingStopPct <= -config.trailingStopLoss) {
+            return {shouldExit: true, reason: 'trailingStop'};
+        }
+    }
+
     return {shouldExit: false, reason: 'holdTime'};
 }
 
 
 const adjustHoldTimeWithProfit = (baseHoldTime: number, current_pnl_percentage: number) => {
+    // Assuming typical fees are around 0.1% per trade (0.2% round trip)
+    const estimatedFees = 0.8;
+    
     // Extend hold time if in significant profit (>3%)
     if (current_pnl_percentage > 3) {
         return baseHoldTime * 1.5;
     }
-    // Reduce hold time if barely profitable (<1%)
-    if (current_pnl_percentage > 0 && current_pnl_percentage < 1) {
+    // Reduce hold time if profit is less than fees + 1%
+    if (current_pnl_percentage > 0 && current_pnl_percentage < (1 + estimatedFees)) {
         return baseHoldTime * 0.7;
     }
     return baseHoldTime;

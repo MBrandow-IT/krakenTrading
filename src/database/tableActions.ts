@@ -1,4 +1,4 @@
-import { executeQuery } from "./sqlconnection";
+import { executeQueryWithRetry } from "./sqlconnection";
 
 export async function insertTableRecords(tableName: string, records: any[]) {
     try {
@@ -32,7 +32,7 @@ export async function insertTableRecords(tableName: string, records: any[]) {
             const query = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${paramPlaceholders})`;
             
             try {
-                await executeQuery({
+                await executeQueryWithRetry({
                     text: query,
                     values: Object.values(cleanedRecord)
                 });
@@ -67,7 +67,7 @@ export async function updateTableRecords(tableName: string, records: any[]) {
             const query = `UPDATE ${tableName} SET ${setStatements} WHERE ID = @param${columns.length}`;
             const values = [...columns.map(col => record[col]), record.ID];
 
-            const updateResult = await executeQuery({
+            const updateResult = await executeQueryWithRetry({
                 text: query,
                 values: values
             });

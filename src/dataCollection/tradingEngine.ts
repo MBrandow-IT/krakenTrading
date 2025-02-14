@@ -1,6 +1,6 @@
 import KrakenClient from 'kraken-api';
 import { TradingConfig } from '../config/tradingConfigurations';
-import { executeQuery } from '../database/sqlconnection';
+import { executeQueryWithRetry } from '../database/sqlconnection';
 import { insertTableRecords, updateTableRecords } from '../database/tableActions';
 import { analyzeEntry } from '../exitsEntries/enter';
 import { analyzeExit } from '../exitsEntries/exits';
@@ -40,6 +40,7 @@ export interface Position {
     strategy: string;
     entryTime: Date;
     order: Order;
+    peakPrice: number;
 }
 
 interface Order {
@@ -253,9 +254,7 @@ export class TradingEngine {
 
         const currentIndicators = {
             rsi: this.calculateRSI(candles),
-            macd: this.calculateMACD(
-                candles
-            ),
+            macd: this.calculateMACD(candles),
             volumeSpike: this.detectVolumeSpike(
                 candles,
                 this.config.volumeSpikeBarCount,
@@ -302,13 +301,29 @@ export class TradingEngine {
         const longEmaPeriod = this.config.longEmaPeriod;
         const signalEmaPeriod = this.config.signalEmaPeriod;
 
-        const shortEma = this.calculateEMA(candles, shortEmaPeriod);
-        const longEma = this.calculateEMA(candles, longEmaPeriod);
-        const macdLine = shortEma.map((value, index) => value - longEma[index]);
-        const signalLine = this.calculateEMA(macdLine, signalEmaPeriod);
-        const histogram = macdLine.map((value, index) => value - signalLine[index]);
-        
-        return { macd: macdLine, signal: signalLine, histogram: histogram };
+        // Get closing prices
+        const prices = candles.map(candle => candle.close);
+
+        // Calculate EMAs
+        const shortEma = this.calculateEMA(prices, shortEmaPeriod);
+        const longEma = this.calculateEMA(prices, longEmaPeriod);
+
+        // Calculate MACD line
+        const macdLine = shortEma[shortEma.length - 1] - longEma[longEma.length - 1];
+
+        // Calculate Signal line using previous MACD values
+        const macdHistory = shortEma.map((value, index) => value - longEma[index]);
+        const signalLine = this.calculateEMA(macdHistory, signalEmaPeriod);
+        const currentSignal = signalLine[signalLine.length - 1];
+
+        // Calculate histogram
+        const histogram = macdLine - currentSignal;
+
+        return {
+            macd: macdLine,
+            signal: currentSignal,
+            histogram: histogram
+        };
     }
     private calculateEMA(candles: Candle[] | number[], period: number): number[] {
         const ema: number[] = [];
@@ -376,128 +391,153 @@ export class TradingEngine {
             return;
         }
 
-        const currentIndicators = this.indicators.get(symbol);
-        if (!currentIndicators) {
-            console.log(`[${symbol}] No indicators available for exit analysis`);
-            return;
-        }
-        let recentClosePrice = currentPrice;
-        if (!recentClosePrice) {
-            recentClosePrice = this.lastCandle.get(symbol)?.close;
-        }
-
-        const {shouldExit, reason} = analyzeExit(position, currentIndicators, this.config, recentClosePrice);
-        if (shouldExit && recentClosePrice) {
+        try {
+            const result = await executeQueryWithRetry(
+                `SELECT ID, peak_price FROM Trades
+                 WHERE symbol = '${symbol}' 
+                 AND closed_at IS NULL 
+                 AND test_case = ${process.env.TEST_CASE} 
+                 AND portfolio_ID = ${this.config.portfolio_ID}`
+            );
             
-            if (this.config.tradeOnKraken) {
-                await this.postKrakenTrade(symbol, position.quantity, 'sell');
+            if (!result.recordset.length) {
+                this.activePositions.delete(symbol);
+                this.portfolio.positions.delete(symbol);
+                return;
             }
-            // Basic PnL before fees
-            const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
-            
-            // Calculate fees (using 0.26% as worst case scenario, adjust based on your fee tier)
-            const feeRate = 0.0026; // 0.26%
-            const entryFee = position.entryPrice * position.quantity * feeRate;
-            const exitFee = recentClosePrice * position.quantity * feeRate;
-            const totalFees = entryFee + exitFee;
 
-            this.portfolio.balance += (recentClosePrice * position.quantity) - exitFee;
-            this.portfolio.availableBalance = this.portfolio.balance;
-            this.portfolio.positions.delete(symbol);
-            this.activePositions.delete(symbol);
-            this.portfolio.balance -= (recentClosePrice * position.quantity);
-            this.portfolio.availableBalance = this.portfolio.balance;
-            this.portfolio.positions.set(symbol, position);
-            this.activePositions.set(symbol, position);
-
-            if (this.config.paperTrade) {
-                
-                // Net PnL after fees
-                const netPnl = grossPnl - totalFees;
-                const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
-                
-                try {
-                    const result = await executeQuery(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
-                    const trade_id = result.recordset[0].ID
-                    
-                    
-                    const closedTrade = []
-                    closedTrade.push({
-                        symbol: symbol,
-                        status: 'closed',
-                        exit_price: recentClosePrice,
-                        Closed_At: new Date().toISOString(),
-                        pnl: netPnl,
-                        reason: reason,
-                        pnl_percentage: netPnlPercentage,
-                        ID: trade_id
-                    })
-                    
-                    // Update database
-                    try {
-                        await updateTableRecords('trades', closedTrade)
-                        
-                        console.log(`[${symbol}] Position closed:`, {
-                            entryPrice: position.entryPrice,
-                            exitPrice: recentClosePrice,
-                            grossPnl: grossPnl,
-                            fees: totalFees,
-                            netPnl: netPnl,
-                            netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
-                            strategy: position.strategy,
-                            reason: reason
-                        });
-                    } catch (error) {
-                        console.error('Error updating trade:', error);
-                        // Rollback portfolio changes if DB update fails
-                        
-                    }
-                } catch (error) {
-                    console.error('Error updating trade:', error);
-                }
-                
+            const currentIndicators = this.indicators.get(symbol);
+            if (!currentIndicators) {
+                console.log(`[${symbol}] No indicators available for exit analysis`);
+                return;
             }
-        } else {
-            if (this.config.paperTrade) {
-                if (!recentClosePrice) {
-                    return;
+
+            let recentClosePrice = currentPrice;
+            if (!recentClosePrice) {
+                recentClosePrice = this.lastCandle.get(symbol)?.close;
+            }
+
+            // Update peak price logic
+            if (recentClosePrice) {
+                const dbPeakPrice = result.recordset[0].peak_price;
+                position.peakPrice = Math.max(
+                    recentClosePrice,
+                    dbPeakPrice || position.peakPrice || recentClosePrice
+                );
+            }
+
+            const {shouldExit, reason} = analyzeExit(position, currentIndicators, this.config, recentClosePrice, position.peakPrice);
+            if (shouldExit && recentClosePrice) {
+                
+                if (this.config.tradeOnKraken) {
+                    await this.postKrakenTrade(symbol, position.quantity, 'sell');
                 }
+                // Basic PnL before fees
                 const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
                 
                 // Calculate fees (using 0.26% as worst case scenario, adjust based on your fee tier)
-                const feeRate = 0.0026; // 0.26%
+                const feeRate = 0.004; // 0.26%
                 const entryFee = position.entryPrice * position.quantity * feeRate;
                 const exitFee = recentClosePrice * position.quantity * feeRate;
                 const totalFees = entryFee + exitFee;
-                
-                // Net PnL after fees
-                const netPnl = grossPnl - totalFees;
-                const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
-    
-                try {
-                    const result = await executeQuery(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
-                    const trade_id = result.recordset[0].ID
-                    let peak_price: number | undefined = result.recordset[0].peak_price
-                if (!peak_price || recentClosePrice > peak_price) {
-                    peak_price = recentClosePrice
+
+                this.portfolio.balance += (recentClosePrice * position.quantity) - exitFee;
+                this.portfolio.availableBalance = this.portfolio.balance;
+                this.portfolio.positions.delete(symbol);
+                this.activePositions.delete(symbol);
+
+                if (this.config.paperTrade) {
+                    
+                    // Net PnL after fees
+                    const netPnl = grossPnl - totalFees;
+                    const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
+                    
+                    try {
+                        const result = await executeQueryWithRetry(`SELECT ID FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
+                        const trade_id = result.recordset[0].ID
+                        
+                        
+                        const closedTrade = []
+                        closedTrade.push({
+                            symbol: symbol,
+                            status: 'closed',
+                            exit_price: recentClosePrice,
+                            Closed_At: new Date().toISOString(),
+                            pnl: netPnl,
+                            reason: reason,
+                            pnl_percentage: netPnlPercentage,
+                            ID: trade_id,
+                            peak_price: position.peakPrice
+                        })
+                        
+                        // Update database
+                        try {
+                            await updateTableRecords('trades', closedTrade)
+                            
+                            console.log(`[${symbol}] Position closed:`, {
+                                entryPrice: position.entryPrice,
+                                exitPrice: recentClosePrice,
+                                grossPnl: grossPnl,
+                                fees: totalFees,
+                                netPnl: netPnl,
+                                netPnlPercentage: `${netPnlPercentage.toFixed(2)}%`,
+                                strategy: position.strategy,
+                                reason: reason
+                            });
+                        } catch (error) {
+                            console.error('Error updating trade: SELECT ID FROM Trades WHERE symbol = ' + symbol + ' AND closed_at IS NULL AND test_case = ' + process.env.TEST_CASE + ' AND portfolio_ID = ' + this.config.portfolio_ID, this.activePositions, error);
+                            
+                        }
+                    } catch (error) {
+                        console.error('Error updating trade:', error);
+                    }
+                    
                 }
-                const updateTrade = []
-    
-                updateTrade.push({
-                    ID: trade_id,
-                    pnl: netPnl,
-                    pnl_percentage: netPnlPercentage,
-                    peak_price: peak_price
-                })
-                try {
-                    await updateTableRecords('trades', updateTrade)
-                } catch (error) {
-                    console.error('Error updating trade: SELECT ID, peak_price FROM Trades WHERE symbol = ' + symbol + ' AND closed_at IS NULL AND test_case = ' + process.env.TEST_CASE + ' AND portfolio_ID = ' + this.config.portfolio_ID, error);
-                }
-                } catch (error) {
-                    console.error('Error updating trade:', error);
+            } else {
+                if (this.config.paperTrade) {
+                    if (!recentClosePrice) {
+                        return;
+                    }
+                    const grossPnl = (recentClosePrice - position.entryPrice) * position.quantity;
+                    
+                    // Calculate fees (using 0.26% as worst case scenario, adjust based on your fee tier)
+                    const feeRate = 0.004; // 0.26%
+                    const entryFee = position.entryPrice * position.quantity * feeRate;
+                    const exitFee = recentClosePrice * position.quantity * feeRate;
+                    const totalFees = entryFee + exitFee;
+                    
+                    // Net PnL after fees
+                    const netPnl = grossPnl - totalFees;
+                    const netPnlPercentage = ((netPnl) / (position.entryPrice * position.quantity)) * 100;
+        
+                    try {
+                        const result = await executeQueryWithRetry(`SELECT ID, peak_price FROM Trades WHERE symbol = '${symbol}' AND closed_at IS NULL AND test_case = ${process.env.TEST_CASE} AND portfolio_ID = ${this.config.portfolio_ID}`)
+                        const trade_id = result.recordset[0].ID
+                        let peak_price: number | undefined = result.recordset[0].peak_price
+                    if (!peak_price || recentClosePrice > peak_price) {
+                        peak_price = recentClosePrice
+                    }
+                    const updateTrade = []
+        
+                    updateTrade.push({
+                        ID: trade_id,
+                        pnl: netPnl,
+                        pnl_percentage: netPnlPercentage,
+                        peak_price: peak_price
+                    })
+                    try {
+                        await updateTableRecords('trades', updateTrade)
+                    } catch (error) {
+                        console.error('Error updating trade: SELECT ID, peak_price FROM Trades WHERE symbol = ' + symbol + ' AND closed_at IS NULL AND test_case = ' + process.env.TEST_CASE + ' AND portfolio_ID = ' + this.config.portfolio_ID, error);
+                    }
+                    } catch (error) {
+                        console.error('Error updating trade:', error);
+                    }
                 }
             }
+        } catch (error) {
+            console.error(`[${symbol}] Error checking trade status:`, error);
+            return;
         }
     }
     private async createPosition(symbol: string): Promise<Position | undefined> {
@@ -514,7 +554,6 @@ export class TradingEngine {
         const maxPositions = this.config.max_positions;
         const currentPositions = this.portfolio.positions.size;
         if (currentPositions >= maxPositions) {
-            // throw new Error(`[${symbol}] Max positions reached: ${currentPositions}/${maxPositions}`);
             return;
         }
 
@@ -522,12 +561,24 @@ export class TradingEngine {
         if (!recentClosePrice) {
             return
         }
-        const shouldEnter = analyzeEntry(indicator, this.config, recentClosePrice);
-        if (shouldEnter) {
-            const positionSize = this.calculatePositionSize(indicator, this.config, this.portfolio.balance, recentClosePrice)
+        const result = analyzeEntry(indicator, this.config, recentClosePrice);
+        if (result.shouldEnter) {
+            const positionSize = this.calculatePositionSize(indicator, this.config, recentClosePrice)
             
             if (this.config.tradeOnKraken) {
-                await this.postKrakenTrade(symbol, positionSize, 'buy');
+                try {
+                    console.log(`[${symbol}] Posting Kraken trade:`, {
+                        symbol: symbol,
+                        quantity: positionSize,
+                        type: 'buy',
+                        entryPrice: recentClosePrice
+                    });
+                    await this.postKrakenTrade(symbol, positionSize, 'buy');
+                } catch (error) {
+                    console.error('Error posting Kraken trade:', error);
+                    // Early return if Kraken trade fails - don't create paper trade
+                    return;
+                }
             }
 
             if (this.config.paperTrade) {
@@ -543,6 +594,7 @@ export class TradingEngine {
                     quantity: positionSize,
                     strategy: this.config.strategyType, // You might want to make this dynamic based on the entry signal
                     entryTime: new Date(),
+                    peakPrice: recentClosePrice,
                     order: {
                         price: recentClosePrice,
                         quantity: positionSize
@@ -566,8 +618,9 @@ export class TradingEngine {
                     entry_price: recentClosePrice,
                     amount: positionSize,
                     Opened_At: new Date().toISOString(),
-                    notes: this.config.strategyType,
-                    test_case: process.env.TEST_CASE
+                    notes: this.config.strategyType + ' ' + result.reason,
+                    test_case: process.env.TEST_CASE,
+                    peak_price: recentClosePrice
                 })
 
                 try {
@@ -600,14 +653,14 @@ export class TradingEngine {
         console.log(`[${symbol}] Kraken trade posted:`, result);
     }
 
-    private calculatePositionSize = (indicator: Indicators, config: TradingConfig, accountBalance: number, current_price: number) => {
+    private calculatePositionSize = (indicator: Indicators, config: TradingConfig, current_price: number) => {
         const { max_position_size } = config;
         
         // 1. Calculate maximum position based on account size
-        const maxPositionByAccount = accountBalance * max_position_size; // 9892 * 0.03 = ~296
+        const maxPositionByAccount = this.portfolio.balance * max_position_size; // 9892 * 0.03 = ~296
         
         // 2. Calculate position size based on risk
-        const riskAmount = accountBalance * 0.01//config.maxRiskPerTrade || 0.01; // 9892 * 0.01 = ~99
+        const riskAmount = this.portfolio.balance * 0.01//config.maxRiskPerTrade || 0.01; // 9892 * 0.01 = ~99
         const positionSizeByRisk = riskAmount / (current_price * (config.stopLossPct/100));
         
         // 3. ATR-based volatility adjustment
@@ -627,5 +680,25 @@ export class TradingEngine {
         );
         
         return finalPositionSize;
+    }
+
+    public async closeAllPositions(): Promise<void> {
+        console.log(`Closing all positions for ${this.config.strategyType} strategy...`);
+        
+        for (const [symbol, position] of this.activePositions) {
+            try {
+                if (this.config.tradeOnKraken) {
+                    await this.postKrakenTrade(symbol, position.quantity, 'sell');
+                }
+                
+                // Close position in local tracking
+                this.portfolio.positions.delete(symbol);
+                this.activePositions.delete(symbol);
+                
+                console.log(`✅ Closed position for ${symbol}`);
+            } catch (error) {
+                console.error(`❌ Error closing position for ${symbol}:`, error);
+            }
+        }
     }
 }

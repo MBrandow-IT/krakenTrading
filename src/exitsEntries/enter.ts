@@ -2,11 +2,10 @@ import { TradingConfig } from "../config/tradingConfigurations";
 import { Indicators } from "../dataCollection/tradingEngine";
 
 
-export const analyzeEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice: number): boolean => {
+export const analyzeEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice: number): { shouldEnter: boolean, reason: string } => {
 
     const result = entranceStrategy(indicator, config, recentClosePrice);
-    const shouldEnter = result.shouldEnter;
-    return shouldEnter;
+    return result;
 }
 
 export const entranceStrategy = (indicator: Indicators, config: TradingConfig, recentClosePrice: number): { shouldEnter: boolean, reason: string } => {
@@ -30,18 +29,20 @@ const meanReversionEntry = (indicator: Indicators, config: TradingConfig, recent
   
   // Buy when RSI is oversold and starting to recover
   if (indicator.rsi < config.rsiThreshold) {
-    // Check for MACD confirmation of reversal
+    // Check for MACD confirmation of reversal if needed
     if (!config.macdCrossNeeded || 
-        (indicator.macd.macd > indicator.macd.signal && indicator.macd.histogram > 0)) {
+        (indicator.macd && 
+         (indicator.macd.macd > indicator.macd.signal || indicator.macd.histogram > 0))) {  // More lenient MACD check
       // Volume should be above average for reversal confirmation
       if (!config.allowVolumeSpikes || indicator.volumeSpike) {
         return {
           shouldEnter: true,
-          reason: `Mean reversion entry: RSI=${indicator.rsi.toFixed(2)} (oversold), MACD crossing up`,
+          reason: `Mean reversion entry: RSI=${indicator.rsi.toFixed(2)} (oversold), MACD: ${indicator.macd.macd.toFixed(2)}, Signal: ${indicator.macd.signal.toFixed(2)}, Histogram: ${indicator.macd.histogram.toFixed(2)}`,
           position: 'long',
           entry_price: recentClosePrice,
         };
       }
+      console.log('Failed volume check');
     }
   }
   return { shouldEnter: false, reason: 'Mean reversion conditions not met' };
@@ -49,9 +50,7 @@ const meanReversionEntry = (indicator: Indicators, config: TradingConfig, recent
 
 const trendFollowingEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice?: number) => {
   
-  if (indicator.rsi > config.rsiThreshold) {
-  }
-  // Enter when momentum is building (RSI > 45) and trend is confirmed
+  // Remove duplicate RSI check
   if (indicator.rsi > config.rsiThreshold && indicator.rsi < 70) {
     // Strong trend confirmation with MACD
     if (indicator.macd.macd > indicator.macd.signal && 
@@ -61,7 +60,7 @@ const trendFollowingEntry = (indicator: Indicators, config: TradingConfig, recen
       if (indicator.volatilitySpike) {
         return {
           shouldEnter: true,
-          reason: `Trend following entry: RSI=${indicator.rsi.toFixed(2)}, MACD trending up`,
+          reason: `Trend following entry: RSI=${indicator.rsi.toFixed(2)}, MACD trending up ${indicator.macd.macd.toFixed(2)} ${indicator.macd.signal.toFixed(2)} ${indicator.macd.histogram.toFixed(2)}`,
           position: 'long',
           entry_price: recentClosePrice,
         };

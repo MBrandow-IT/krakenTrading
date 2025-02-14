@@ -53,3 +53,23 @@ export async function executeQuery(
     throw err
   }
 }
+
+export async function executeQueryWithRetry(
+  query: string | QueryConfig,
+  maxRetries: number = 3,
+  delay: number = 1000
+): Promise<any> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await executeQuery(query);
+    } catch (err: any) {
+      // Check if it's a deadlock error (SQL Server error code 1205)
+      if (err.number === 1205 && attempt < maxRetries) {
+        console.log(`Deadlock detected, retry attempt ${attempt}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}

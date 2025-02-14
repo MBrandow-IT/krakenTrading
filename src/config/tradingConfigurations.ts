@@ -29,6 +29,7 @@ export interface TradingConfig {
     tradeOnKraken: boolean; // Whether the strategy trades on Kraken
     tradeBalance: number; // The trade balance, this is the trade balance of the strategy, if Kraken is true, this will be the balance unless it exceeds the balance on Kraken
     paperTrade: boolean; // Whether or not you want to store the trades on the local DB.
+    trailingStopLoss?: number; // The trailing stop loss, will pull out if the price drops below the peak price by the trailing stop loss percentage
 }
 
 export const meanReversionConfig: TradingConfig = {
@@ -38,8 +39,8 @@ export const meanReversionConfig: TradingConfig = {
     macdCrossNeeded: true,     // Confirm with MACD cross
     allowVolumeSpikes: true,   // Volume confirms reversal
     dynamicStopLoss: false,    
-    stopLossPct: 3,            // Wider stop due to crypto volatility
-    takeProfitPct: 6,          // Maintaining 2:1 ratio
+    stopLossPct: 2.5,            // Wider stop due to crypto volatility
+    takeProfitPct: 7.5,          // Maintaining 2:1 ratio
     intervalMinutes: 5,        // Standard 5-minute chart
     rsiPeriod: 14,            // Standard RSI period
     longEmaPeriod: 26,
@@ -72,8 +73,8 @@ export const meanReversionConfig: TradingConfig = {
     macdCrossNeeded: true,     // MACD cross confirms trend
     allowVolumeSpikes: true,   // Volume confirms trend
     dynamicStopLoss: true,     // ATR-based stops
-    stopLossPct: 1.5,          // Base stop loss (modified by ATR)
-    takeProfitPct: 4.5,        // 3:1 reward-to-risk ratio
+    stopLossPct: 2,          // Base stop loss (modified by ATR)
+    takeProfitPct: 6,        // 3:1 reward-to-risk ratio
     intervalMinutes: 15,       // Longer timeframe for trends
     rsiPeriod: 14,
     longEmaPeriod: 50,         // Longer EMAs for trend following
@@ -138,9 +139,9 @@ export const meanReversionConfig: TradingConfig = {
     rsiThreshold: 60,          // Enter on strong momentum
     macdCrossNeeded: true,     // Quick MACD confirmation
     allowVolumeSpikes: true,   // Volume is crucial for scalping
-    dynamicStopLoss: true,     
-    stopLossPct: 1.0,          // Wider stops for crypto
-    takeProfitPct: 2.0,        // Maintaining 2:1 ratio
+    dynamicStopLoss: false,     
+    stopLossPct: 1.2,          // Wider stops for crypto
+    takeProfitPct: 3.4,        // Maintaining 2:1 ratio
     intervalMinutes: 1,        // Slightly longer for crypto
     rsiPeriod: 7,             // Faster RSI
     longEmaPeriod: 13,        // Shorter EMAs for faster signals
@@ -149,8 +150,8 @@ export const meanReversionConfig: TradingConfig = {
     volumeSpikeBarCount: 10,   // Quick volume confirmation
     volumeSpikeFactor: 1.8,    // Stronger volume confirmation
     volatilityLookback: 20,
-    max_position_size: 0.03,   // Smaller position due to higher risk
-    max_positions: 10,         // More positions due to shorter holds
+    max_position_size: 0.06,   // Smaller position due to higher risk
+    max_positions: 16,         // More positions due to shorter holds
     maxVolatility: 1.5,        // Adjusted up for crypto
     minAtrPercent: 0.1,        // Very small ATR requirement
     maxAtrPercent: 1.0,        // Maximum ATR for scalping
@@ -197,4 +198,5 @@ export const meanReversionConfig: TradingConfig = {
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
+    trailingStopLoss: 3.5,
   };  
