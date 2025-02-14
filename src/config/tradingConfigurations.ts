@@ -1,34 +1,34 @@
 export interface TradingConfig {
-    strategyType: string;
-    rsiThreshold: number;
-    macdCrossNeeded: boolean;
-    allowVolumeSpikes: boolean;
-    dynamicStopLoss: boolean;
-    stopLossPct: number;
-    takeProfitPct: number;
-    intervalMinutes: number;
-    rsiPeriod: number;
-    longEmaPeriod: number;
-    shortEmaPeriod: number; 
-    signalEmaPeriod: number;
-    volumeSpikeBarCount: number;
-    volumeSpikeFactor: number;
-    volatilityLookback: number;
-    max_position_size: number;
-    max_positions: number; 
-    maxVolatility: number;
-    minAtrPercent: number;
-    volatilityThreshold: number;
-    maxHoldTimeMinutes: number;
-    minHoldTimeMinutes: number;
-    adjustHoldTimeWithVolatility: boolean;
-    minimumRequiredCandles: number;
-    maxAtrPercent: number | null;
-    portfolio_ID: number;
-    active: boolean;
-    tradeOnKraken: boolean;
-    tradeBalance: number;
-    paperTrade: boolean;
+    strategyType: string;         // The name of the strategy, meanReversion, trendFollowing, scalping, volatilityBreakout see enter.ts for more details.
+    rsiThreshold: number;        // The RSI threshold for the strategy
+    macdCrossNeeded: boolean;    // Whether the strategy requires a MACD cross
+    allowVolumeSpikes: boolean; // Whether the strategy allows volume spikes
+    dynamicStopLoss: boolean;   // Whether the strategy uses a dynamic stop loss
+    stopLossPct: number;         // The stop loss percentage, if dynamicStopLoss is true, this will be the lowest stop loss percentage
+    takeProfitPct: number;      // The take profit percentage, if dynamicTakeProfit is true, this will be the lowest take profit percentage
+    intervalMinutes: number;     // The interval of your candles in minutes
+    rsiPeriod: number;           // The RSI period, this is the period of the RSI indicator
+    longEmaPeriod: number;        // The long EMA period, this is the period of the long EMA indicator
+    shortEmaPeriod: number;       // The short EMA period, this is the period of the short EMA indicator
+    signalEmaPeriod: number;      // The signal EMA period, this is the period of the signal EMA indicator
+    volumeSpikeBarCount: number; // The number of bars to look back for volume spikes
+    volumeSpikeFactor: number;   // The factor of the volume spike, this is the factor of the volume spike indicator
+    volatilityLookback: number;   // The lookback period for the volatility indicator
+    max_position_size: number;  // The maximum position size, this is the maximum position size of the strategy
+    max_positions: number;      // The maximum number of positions, this is the maximum number of positions of the strategy
+    maxVolatility: number;       // The maximum volatility, this is the maximum volatility of the strategy
+    minAtrPercent: number;      // The minimum ATR percentage, this is the minimum ATR percentage of the strategy
+    volatilityThreshold: number; // The volatility threshold, this is the volatility threshold of the strategy
+    maxHoldTimeMinutes: number; // The maximum hold time, this is the maximum hold time of the strategy
+    minHoldTimeMinutes: number; // The minimum hold time, this is the minimum hold time of the strategy
+    adjustHoldTimeWithVolatility: boolean; // Whether the strategy adjusts the hold time with volatility
+    minimumRequiredCandles: number; // The minimum required candles, this is the minimum required candles of the strategy
+    maxAtrPercent: number | null; // The maximum ATR percentage, this is the maximum ATR percentage of the strategy
+    portfolio_ID: number; // The portfolio ID, this is the portfolio ID of the strategy
+    active: boolean; // Whether the strategy is active, if false the strategy will not be used at all
+    tradeOnKraken: boolean; // Whether the strategy trades on Kraken
+    tradeBalance: number; // The trade balance, this is the trade balance of the strategy, if Kraken is true, this will be the balance unless it exceeds the balance on Kraken
+    paperTrade: boolean; // Whether or not you want to store the trades on the local DB.
 }
 
 export const meanReversionConfig: TradingConfig = {
