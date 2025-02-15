@@ -113,16 +113,12 @@ export class TradingEngine {
                         close: parseFloat(ohlc[4]),
                         volume: parseFloat(ohlc[6])
                     }))
-                    .slice(-this.config.minimumRequiredCandles - 1); // Get one extra candle to account for in-progress
+                    .slice(-this.config.minimumRequiredCandles - 1); // Get one extra candle for the buffer
 
-                // Remove the last candle since it's in-progress
-                const inProgressCandle = historicalCandles.pop();
+                // Store the last (in-progress) candle separately and remove it from the buffer
+                const lastCandle = historicalCandles.pop();
+                this.lastCandle.set(symbol, lastCandle!);
                 this.candleBuffer.set(symbol, historicalCandles);
-                
-                // Store the in-progress candle as the last candle
-                if (inProgressCandle) {
-                    this.lastCandle.set(symbol, inProgressCandle);
-                }
                 
                 // Initialize indicators with historical data
                 this.indicators.set(symbol, {
@@ -166,6 +162,8 @@ export class TradingEngine {
     private handleWebSocketMessage(symbols: string[], data: any): void {
         if (data.channel === 'ohlc') {
             const candleEvents = data.data;
+
+            // console.log(`[${symbols}] Candle events:`, candleEvents);
             
             for (const candleData of candleEvents) {
                 const {
@@ -178,8 +176,11 @@ export class TradingEngine {
                     interval_begin
                 } = candleData;
                 
+                // Convert ISO timestamp to Unix timestamp (seconds)
+                const unixTimestamp = Math.floor(new Date(interval_begin).getTime() / 1000);
+                
                 const candle: Candle = {
-                    timestamp: interval_begin,
+                    timestamp: unixTimestamp,
                     open: parseFloat(open),
                     high: parseFloat(high),
                     low: parseFloat(low),
@@ -188,9 +189,11 @@ export class TradingEngine {
                 };
 
                 const lastCandle = this.lastCandle.get(symbol);
+
+                // console.log(`[${symbol}] Last candle:`, lastCandle);
                 
                 if (lastCandle) {
-                    if (candle.timestamp > lastCandle.timestamp) {
+                    if (unixTimestamp > lastCandle.timestamp) {
                         // New candle period has started
                         const buffer = this.candleBuffer.get(symbol) || [];
                         buffer.push(lastCandle);
@@ -203,8 +206,9 @@ export class TradingEngine {
                         this.lastCandle.set(symbol, candle);
                         
                         // Only update indicators on new candle period
+                        console.log(`[${symbol}] Updating indicators with ${buffer.length} candles`);
                         this.updateIndicators(symbol, buffer);
-                    } else if (candle.timestamp === lastCandle.timestamp) {
+                    } else if (unixTimestamp === lastCandle.timestamp) {
                         // Only update if there's a meaningful change in the candle
                         if (
                             candle.high !== lastCandle.high ||
@@ -548,6 +552,7 @@ export class TradingEngine {
         if (!recentClosePrice) {
             return
         }
+
         const result = analyzeEntry(indicator, this.config, recentClosePrice);
         if (result.shouldEnter) {
             const positionSize = this.calculatePositionSize(indicator, this.config, recentClosePrice)
