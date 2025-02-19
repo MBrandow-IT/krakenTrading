@@ -22,11 +22,16 @@ interface Trade {
 }
 
 export interface Indicators {
-    rsi: number;
+    rsi: {
+        currentRsi: number;
+        previousRsi: number;
+    };
     macd: {
         macd: number;
         signal: number;
         histogram: number;
+        shortEma: number;
+        longEma: number;
     };
     volumeSpike: boolean;
     sma: number;
@@ -69,23 +74,25 @@ export interface Portfolio {
 
 export class TradingEngine {
     private config: TradingConfig;
-    private activePositions: Map<string, Position>;
+    public activePositions: Map<string, Position>;
     private indicators: Map<string, Indicators>;
     private websockets: Map<string[], KrakenWebSocket>;
     private lastCandle: Map<string, Candle>;
     private candleBuffer: Map<string, Candle[]>;
     private portfolio: Portfolio;
+    public placeNewOrder: boolean;
 
-    constructor(config: TradingConfig) {
+    constructor(config: TradingConfig, activePositions: Map<string, Position>) {
         this.config = config;
-        this.activePositions = new Map();
+        this.activePositions = activePositions;
         this.indicators = new Map();
         this.websockets = new Map();
         this.lastCandle = new Map();
         this.candleBuffer = new Map();  // Store recent candles for indicators
+        this.placeNewOrder = true;
         this.portfolio = {
             balance: 0,
-            positions: new Map(),
+            positions: this.activePositions, // Initialize with activePositions
             availableBalance: 0
         }
     }
@@ -93,6 +100,9 @@ export class TradingEngine {
     async initialize(symbols: string[], portfolioBalance: Portfolio): Promise<void> {
         this.portfolio = portfolioBalance;
 
+        // Calculate required candles based on longest EMA period
+        const requiredCandles = this.config.longEmaPeriod * 4;  // Get 4x the longest period
+        
         // Fetch historical data for each symbol first
         for (const symbol of symbols) {
             try {
@@ -113,7 +123,7 @@ export class TradingEngine {
                         close: parseFloat(ohlc[4]),
                         volume: parseFloat(ohlc[6])
                     }))
-                    .slice(-this.config.minimumRequiredCandles - 1); // Get one extra candle for the buffer
+                    .slice(-requiredCandles - 1); // Get one extra candle for the buffer
 
                 // Store the last (in-progress) candle separately and remove it from the buffer
                 const lastCandle = historicalCandles.pop();
@@ -122,22 +132,27 @@ export class TradingEngine {
                 
                 // Initialize indicators with historical data
                 this.indicators.set(symbol, {
-                    rsi: 0,
+                    rsi: {
+                        currentRsi: 0,
+                        previousRsi: 0
+                    },
                     macd: {
                         macd: 0,
                         signal: 0,
-                        histogram: 0
+                        histogram: 0,
+                        shortEma: 0,
+                        longEma: 0
                     },
                     volumeSpike: false,
                     sma: 0,
                     volatilitySpike: false,
-                    atr: 0
+                    atr: 0,
                 });
 
                 // Update indicators with historical data
                 this.updateIndicators(symbol, historicalCandles);
                 
-                console.log(`[${symbol}] Initialized with ${historicalCandles.length} historical candles`);
+                // console.log(`[${symbol}] Initialized with ${historicalCandles.length} historical candles`);
                 // console.log(historicalCandles[0])
             } catch (error) {
                 console.error(`[${symbol}] Failed to fetch historical data:`, error);
@@ -198,7 +213,12 @@ export class TradingEngine {
                         const buffer = this.candleBuffer.get(symbol) || [];
                         buffer.push(lastCandle);
                         
-                        while (buffer.length > this.config.minimumRequiredCandles) {
+                        const requiredCandles = Math.max(
+                            this.config.longEmaPeriod * 4,  // For MACD calculation
+                            this.config.minimumRequiredCandles
+                        );
+
+                        while (buffer.length > requiredCandles) {
                             buffer.shift();
                         }
                         
@@ -206,7 +226,7 @@ export class TradingEngine {
                         this.lastCandle.set(symbol, candle);
                         
                         // Only update indicators on new candle period
-                        console.log(`[${symbol}] Updating indicators with ${buffer.length} candles`);
+                        // console.log(`[${symbol}] Updating indicators with ${buffer.length} candles`);
                         this.updateIndicators(symbol, buffer);
                     } else if (unixTimestamp === lastCandle.timestamp) {
                         // Only update if there's a meaningful change in the candle
@@ -257,7 +277,10 @@ export class TradingEngine {
         }
 
         const currentIndicators = {
-            rsi: this.calculateRSI(candles),
+            rsi: {
+                currentRsi: this.calculateRSI(candles.slice(-this.config.rsiPeriod - 1)),
+                previousRsi: this.calculateRSI(candles.slice(-this.config.rsiPeriod - 2, -1))
+            },
             macd: this.calculateMACD(candles),
             volumeSpike: this.detectVolumeSpike(
                 candles,
@@ -279,66 +302,105 @@ export class TradingEngine {
     }
     // Add placeholder methods for indicator calculations
     private calculateRSI(candles: Candle[]): number {
-        const gains = [];
-        const losses = [];
-
-        for (let i = 1; i < candles.length; i++) {
-            const priceChange = candles[i].close - candles[i - 1].close;
-            if (priceChange > 0) {
-                gains.push(priceChange);
-            } else {
-                losses.push(Math.abs(priceChange));
-            }
+        if (candles.length < this.config.rsiPeriod + 1) return 0;
+        
+        const period = this.config.rsiPeriod;
+        let gains = 0;
+        let losses = 0;
+        
+        // First pass to get initial averages
+        for (let i = 1; i <= period; i++) {
+            const change = candles[i].close - candles[i-1].close;
+            if (change >= 0) gains += change;
+            else losses += Math.abs(change);
         }
-
-        const averageGain = gains.reduce((sum, gain) => sum + gain, 0) / gains.length;
-        const averageLoss = losses.reduce((sum, loss) => sum + loss, 0) / losses.length;
-
-        const relativeStrength = averageGain / averageLoss;
-        const rsi = 100 - 100 / (1 + relativeStrength);
-
-        return rsi;
+        
+        // Get initial averages
+        let avgGain = gains / period;
+        let avgLoss = losses / period;
+        
+        // Calculate smoothed RSI for remaining periods
+        for (let i = period + 1; i < candles.length; i++) {
+            const change = candles[i].close - candles[i-1].close;
+            
+            avgGain = ((avgGain * (period - 1)) + (change > 0 ? change : 0)) / period;
+            avgLoss = ((avgLoss * (period - 1)) + (change < 0 ? Math.abs(change) : 0)) / period;
+        }
+        
+        if (avgLoss === 0) return 100;
+        const rs = avgGain / avgLoss;
+        return 100 - (100 / (1 + rs));
     }
 
     private calculateMACD(candles: Candle[]) {
-        const shortEmaPeriod = this.config.shortEmaPeriod;
-        const longEmaPeriod = this.config.longEmaPeriod;
-        const signalEmaPeriod = this.config.signalEmaPeriod;
+        const shortEmaPeriod = this.config.shortEmaPeriod;  // 12
+        const longEmaPeriod = this.config.longEmaPeriod;    // 26
+        const signalEmaPeriod = this.config.signalEmaPeriod; // 9
 
         // Get closing prices
         const prices = candles.map(candle => candle.close);
+
+        // Debug log
+        // console.log(`Calculating MACD with ${prices.length} prices`);
+
+        // Ensure we have enough data
+        if (prices.length < longEmaPeriod + signalEmaPeriod) {
+            console.log('Not enough data for MACD calculation');
+            return {
+                macd: 0,
+                signal: 0,
+                histogram: 0
+            };
+        }
 
         // Calculate EMAs
         const shortEma = this.calculateEMA(prices, shortEmaPeriod);
         const longEma = this.calculateEMA(prices, longEmaPeriod);
 
+        // Ensure arrays are the same length by trimming the longer one
+        const shortEmaValues = shortEma.slice(-longEma.length);
+        
         // Calculate MACD line
-        const macdLine = shortEma[shortEma.length - 1] - longEma[longEma.length - 1];
-
-        // Calculate Signal line using previous MACD values
-        const macdHistory = shortEma.map((value, index) => value - longEma[index]);
+        const macdHistory = shortEmaValues.map((value, index) => value - longEma[index]);
+        
+        // Calculate Signal line (9-day EMA of MACD line)
         const signalLine = this.calculateEMA(macdHistory, signalEmaPeriod);
-        const currentSignal = signalLine[signalLine.length - 1];
 
-        // Calculate histogram
-        const histogram = macdLine - currentSignal;
+        // Get current values (most recent)
+        const currentMACD = macdHistory[macdHistory.length - 1];
+        const currentSignal = signalLine[signalLine.length - 1];
+        const currentHistogram = currentMACD - currentSignal;
+
+        // Debug log
+        // console.log('MACD values:', {
+        //     macd: currentMACD,
+        //     signal: currentSignal,
+        //     histogram: currentHistogram
+        // });
 
         return {
-            macd: macdLine,
+            macd: currentMACD,
             signal: currentSignal,
-            histogram: histogram
+            histogram: currentHistogram,
+            shortEma: shortEma[shortEma.length - 1],
+            longEma: longEma[longEma.length - 1]
         };
     }
-    private calculateEMA(candles: Candle[] | number[], period: number): number[] {
-        const ema: number[] = [];
-        const multiplier = 2 / (period + 1);
 
-        for (let i = 0; i < candles.length; i++) {
-            const closePrice = Array.isArray(candles) && typeof candles[i] === 'object' 
-                ? (candles[i] as Candle).close 
-                : (candles[i] as number);
-            const emaValue = ema.length === 0 ? closePrice : (closePrice - ema[i - 1]) * multiplier + ema[i - 1];
-            ema.push(emaValue);
+    private calculateEMA(prices: number[], period: number): number[] {
+        const multiplier = 2 / (period + 1);
+        const ema: number[] = [];
+        
+        // Initialize EMA with SMA for first period
+        const sma = prices.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
+        ema.push(sma);
+        
+        // Calculate EMA for remaining prices
+        for (let i = period; i < prices.length; i++) {
+            const currentPrice = prices[i];
+            const previousEMA = ema[ema.length - 1];
+            const currentEMA = (currentPrice - previousEMA) * multiplier + previousEMA;
+            ema.push(currentEMA);
         }
 
         return ema;
@@ -533,7 +595,7 @@ export class TradingEngine {
     }
     private async createPosition(symbol: string): Promise<Position | undefined> {
         // Check if we already have an active position for this symbol
-        if (this.activePositions.has(symbol)) {
+        if (this.activePositions.has(symbol) && this.placeNewOrder) {
             return;
         }
 
@@ -543,8 +605,9 @@ export class TradingEngine {
         }
 
         const maxPositions = this.config.max_positions;
-        const currentPositions = this.portfolio.positions.size;
+        const currentPositions = this.activePositions.size; // Use activePositions.size instead
         if (currentPositions >= maxPositions) {
+            // console.log(`Max positions (${maxPositions}) reached for ${this.config.strategyType}. Current positions: ${currentPositions}`);
             return;
         }
 
@@ -595,7 +658,7 @@ export class TradingEngine {
 
                 // Update local portfolio state
                 this.portfolio.positions.set(symbol, newPosition);
-                this.portfolio.balance -= (recentClosePrice * positionSize);
+                // this.portfolio.balance -= (recentClosePrice * positionSize);
                 this.portfolio.availableBalance = this.portfolio.balance;
                 this.activePositions.set(symbol, newPosition);
 
@@ -622,7 +685,7 @@ export class TradingEngine {
                     console.error('Error inserting trade:', error);
                     // Rollback local portfolio changes if DB insert fails
                     this.portfolio.positions.delete(symbol);
-                    this.portfolio.balance += (recentClosePrice * positionSize);
+                    // this.portfolio.balance += (recentClosePrice * positionSize);
                     this.portfolio.availableBalance = this.portfolio.balance;
                 }
             }
@@ -652,7 +715,7 @@ export class TradingEngine {
         const maxPositionByAccount = this.portfolio.balance * max_position_size; // 9892 * 0.03 = ~296
         
         // 2. Calculate position size based on risk
-        const riskAmount = this.portfolio.balance * 0.01//config.maxRiskPerTrade || 0.01; // 9892 * 0.01 = ~99
+        const riskAmount = this.portfolio.balance * 0.04//config.maxRiskPerTrade || 0.01; // 9892 * 0.01 = ~99
         const positionSizeByRisk = riskAmount / (current_price * (config.stopLossPct/100));
         
         // 3. ATR-based volatility adjustment

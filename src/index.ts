@@ -1,23 +1,72 @@
 import 'dotenv/config';
 
 import { TradingEngine } from "./dataCollection/tradingEngine";
-import { scalpingConfig, trendFollowingConfig, longTrendFollowingConfig, meanReversionConfig, volatilityBreakoutConfig } from "./config/tradingConfigurations";
+import { scalpingConfig, trendFollowingConfig, longTrendFollowingConfig, meanReversionConfig, volatilityBreakoutConfig, longerTrendFollowingConfig } from "./config/tradingConfigurations";
 import { trackedCoins } from "./trackedCoins";
 import { portfolio } from './portfolio/portfolio';
+import { executeQueryWithRetry } from './database/sqlconnection';
+import readline from 'readline';
+readline.emitKeypressEvents(process.stdin);
 
 let engines: TradingEngine[] = []; // Store references to all engines
 
 const startTrading = async () => {
     console.log('🚀 Initializing trading system...');
     
-    const configs = [trendFollowingConfig, longTrendFollowingConfig, meanReversionConfig, volatilityBreakoutConfig, scalpingConfig];
+    const configs = [longerTrendFollowingConfig, trendFollowingConfig, longTrendFollowingConfig, meanReversionConfig, volatilityBreakoutConfig, scalpingConfig];
     const activeConfigs = configs.filter(config => config.active);
+    
+    const options = async (signal: string) => {
+        if (signal === 'prompted') {
+            console.log('🔄 Options:');
+            console.log('🔄 1. Do not allow new orders');
+            console.log('🔄 2. Allow new orders');
+            console.log('🔄 3. Exit');
+
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            process.stdin.setEncoding('utf8');
+
+            
+        }
+    }
+
+    const noNewOrders = () => {
+        for (const engine of engines) {
+            engine.placeNewOrder = false;
+        }
+    }
+
+    const allowNewOrders = () => {
+        for (const engine of engines) {
+            engine.placeNewOrder = true;
+        }
+    }
+    
     
     try {
         // Initialize all engines in parallel
         await Promise.all(activeConfigs.map(async (config) => {
             try {
-                const engine = new TradingEngine(config);
+                let activePositions = new Map();
+
+                try {
+                    const result = await executeQueryWithRetry(`SELECT symbol, entry_price, amount AS quantity, '${config.strategyType}' AS strategy, Opened_at AS entryTime, peak_price AS peakPrice FROM trades WHERE portfolio_id = ${config.portfolio_ID} AND test_case = '${process.env.TEST_CASE}' AND closed_at IS NULL`);
+                    const activeTrades = result.recordset;
+                    activeTrades.forEach((trade: any) => {
+                        activePositions.set(trade.symbol, {
+                            entryPrice: trade.entry_price,
+                            quantity: trade.quantity,
+                            strategy: trade.strategy,
+                            entryTime: trade.entryTime,
+                            peakPrice: trade.peakPrice
+                        });
+                    });
+                } catch (error) {
+                    console.error('Error getting active positions:', error);
+                }
+                
+                const engine = new TradingEngine(config, activePositions);
                 engines.push(engine); // Store engine reference
                 
                 console.log('📊 Trading configuration:', {
@@ -67,6 +116,12 @@ const startTrading = async () => {
         console.error('❌ Error in trading system:', error);
         process.exit(1);
     }
+
+    process.stdin.on('keypress', (key) => {
+        if (key.ctrl && key.name === 'o') {
+          options('prompted');
+        }
+      });
 }
 
 // Actually call the function to start everything

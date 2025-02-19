@@ -48,9 +48,13 @@ export async function executeQuery(
       request = request.input(`param${index}`, value)
     })
     return await request.query(query.text)
-  } catch (err) {
-    console.error('SQL error', err)
-    throw err
+  } catch (err: any) {
+    if (err.number === 1205) {
+        throw err
+    } else {
+        console.error('SQL error', err)
+        throw err
+    }
   }
 }
 

@@ -12,8 +12,8 @@ export const entranceStrategy = (indicator: Indicators, config: TradingConfig, r
     const strategyType = config.strategyType || 'meanReversion'; // Default strategy
 
   switch(strategyType) {
-    case 'meanReversion':
-      return meanReversionEntry(indicator, config, recentClosePrice);
+    // case 'meanReversion':
+    //   return meanReversionEntry(indicator, config, recentClosePrice);
     case 'trendFollowing':
       return trendFollowingEntry(indicator, config, recentClosePrice);
     case 'scalping':
@@ -25,47 +25,63 @@ export const entranceStrategy = (indicator: Indicators, config: TradingConfig, r
   }
 };
 
-const meanReversionEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice?: number) => {
+// const meanReversionEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice?: number) => {
   
-  // Buy when RSI is oversold and starting to recover
-  if (indicator.rsi < config.rsiThreshold) {
-    // Check for MACD confirmation of reversal if needed
-    if (!config.macdCrossNeeded || 
-        (indicator.macd && 
-         (indicator.macd.macd > indicator.macd.signal || indicator.macd.histogram > 0))) {  // More lenient MACD check
-      // Volume should be above average for reversal confirmation
-      if (!config.allowVolumeSpikes || indicator.volumeSpike) {
-        return {
-          shouldEnter: true,
-          reason: `Mean reversion entry: RSI=${indicator.rsi.toFixed(2)} (oversold), MACD: ${indicator.macd.macd.toFixed(2)}, Signal: ${indicator.macd.signal.toFixed(2)}, Histogram: ${indicator.macd.histogram.toFixed(2)}`,
-          position: 'long',
-          entry_price: recentClosePrice,
-        };
-      }
-      console.log('Failed volume check');
-    }
-  }
-  return { shouldEnter: false, reason: 'Mean reversion conditions not met' };
-};
+//   // Check for oversold conditions with configurable threshold
+//   if (indicator.rsi < config.rsiThreshold) {
+//     // Ensure RSI is starting to turn up (momentum shift)
+//     const rsiIncreasing = indicator.rsi > indicator.previousRsi;
+    
+//     // Multiple confirmations for stronger entry signals
+//     const macdConfirmation = indicator.macd.macd > indicator.macd.signal && 
+//                             indicator.macd.histogram > indicator.previousMacd.histogram;
+    
+//     // Price should be near or below a moving average for mean reversion
+//     const priceNearMA = recentClosePrice <= indicator.sma200 * 1.02; // Within 2% of SMA
+    
+//     if (rsiIncreasing && macdConfirmation && priceNearMA) {
+//       // Volume confirmation with trending volume
+//       if (indicator.volumeSpike) {
+//         return {
+//           shouldEnter: true,
+//           reason: `Mean reversion entry: RSI=${indicator.rsi.toFixed(2)} (recovering), ` +
+//                  `MACD improving, Price near MA, Volume confirmed`,
+//           position: 'long',
+//           entry_price: recentClosePrice,
+//         };
+//       }
+//       console.log('Failed volume confirmation');
+//     }
+//   }
+//   return { shouldEnter: false, reason: 'Mean reversion conditions not met' };
+// };
 
 const trendFollowingEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice?: number) => {
   
-  // Remove duplicate RSI check
-  if (indicator.rsi > config.rsiThreshold && indicator.rsi < 70) {
+//   console.log('indicator.rsi.currentRsi', indicator.rsi.currentRsi, 'indicator.rsi.previousRsi', indicator.rsi.previousRsi, 'config.rsiThreshold', config.rsiThreshold)
+//   console.log('indicator.macd.longEma', indicator.macd.longEma, 'indicator.macd.shortEma', indicator.macd.shortEma)
+  // Check for upward trend using RSI
+  if (indicator.rsi.currentRsi > config.rsiThreshold && indicator.rsi.currentRsi < 70 && indicator.rsi.previousRsi < config.rsiThreshold) {
     // Strong trend confirmation with MACD
-    if (indicator.macd.macd > indicator.macd.signal && 
-        indicator.macd.histogram > 0 && 
-        indicator.macd.macd > 0) {
+    // 1. MACD line is above Signal line (positive momentum)
+    // 2. MACD line is above 0 (bullish territory)
+    // 3. Histogram is positive and growing (increasing momentum)
+    if (indicator.macd.macd > indicator.macd.signal && // MACD crossover
+        indicator.macd.macd > 0 &&                     // Bullish territory
+        indicator.macd.shortEma > indicator.macd.longEma 
+        && indicator.macd.histogram > 0) {                // Positive momentum
+      
       // Ensure we're not in high volatility
-      if (indicator.volatilitySpike) {
+      if (!indicator.volatilitySpike) {
         return {
           shouldEnter: true,
-          reason: `Trend following entry: RSI=${indicator.rsi.toFixed(2)}, MACD trending up ${indicator.macd.macd.toFixed(2)} ${indicator.macd.signal.toFixed(2)} ${indicator.macd.histogram.toFixed(2)}`,
+          reason: `Trend following entry: Indicators: ${JSON.stringify(indicator)}`,
           position: 'long',
           entry_price: recentClosePrice,
         };
       }
     }
+
   }
   return { shouldEnter: false, reason: 'Trend following conditions not met' };
 };
@@ -73,8 +89,8 @@ const trendFollowingEntry = (indicator: Indicators, config: TradingConfig, recen
 const scalpingEntry = (indicator: Indicators, config: TradingConfig, recentClosePrice: number) => {
   
   // Quick momentum trades with tight parameters
-  if (indicator.rsi > config.rsiThreshold && indicator.rsi < 75) {
-    if (indicator.macd.macd > indicator.macd.signal) {
+  if (indicator.rsi.currentRsi > config.rsiThreshold) {
+    if (indicator.macd.macd > indicator.macd.signal && indicator.macd.macd > 0) {
       // Volume confirmation is crucial for scalping
       if (indicator.volumeSpike) {
         // ATR check for volatility
@@ -82,7 +98,7 @@ const scalpingEntry = (indicator: Indicators, config: TradingConfig, recentClose
         if (atrPercent > 0.1 && atrPercent < 1.0) { // Reasonable volatility range
           return {
             shouldEnter: true,
-            reason: `Scalp entry: RSI=${indicator.rsi.toFixed(2)}, Volume spike confirmed`,
+            reason: `Scalp entry: RSI=${indicator.rsi.currentRsi.toFixed(2)}, Volume spike confirmed`,
             position: 'long',
             entry_price: recentClosePrice,
           };
@@ -99,7 +115,7 @@ const volatilityBreakoutEntry = (indicator: Indicators, config: TradingConfig, r
 
     console.log('indicator.rsi', indicator.rsi)
     // Use RSI as a filter only
-    if (indicator.rsi > 40 && indicator.rsi < 60) {
+    if (indicator.rsi.currentRsi > 40 && indicator.rsi.currentRsi < 60) {
       // ATR for position sizing and stop placement
       const atrPercent = (indicator.atr / recentClosePrice) * 100;
       if (atrPercent > config.minAtrPercent) {

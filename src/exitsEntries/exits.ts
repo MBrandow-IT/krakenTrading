@@ -2,62 +2,48 @@ import { Position } from "../dataCollection/tradingEngine";
 import { Indicators } from "../dataCollection/tradingEngine";
 import { TradingConfig } from "../config/tradingConfigurations";
 
-export const analyzeExit = (position: Position, indicators: Indicators, config: TradingConfig, recentClosePrice?: number, peakPrice?: number): {shouldExit: boolean, reason: string} => {
-    const { entryPrice, entryTime } = position;
-
-    if (!recentClosePrice) {
-        return {shouldExit: false, reason: 'holdTime'};
-    }
-
-    const current_pnl_percentage = ((recentClosePrice - entryPrice) / entryPrice) * 100;
-
-    const holdTimeMinutes = (new Date().getTime() - new Date(entryTime).getTime()) / (1000 * 60);
+export const analyzeExit = (
+    position: Position,
+    indicators: Indicators,
+    config: TradingConfig,
+    recentClosePrice?: number,
+    peakPrice?: number
+  ): {shouldExit: boolean, reason: string} => {
     
-    const baseHoldTime = config.maxHoldTimeMinutes;
-    const adjustedHoldTime = adjustHoldTimeWithProfit(baseHoldTime, current_pnl_percentage);
-
-    const maxHoldTime = config.adjustHoldTimeWithVolatility 
-      ? getDynamicMaxHoldTime(adjustedHoldTime, indicators)
-      : adjustedHoldTime;
-
-    // Check minimum hold time
-    if (holdTimeMinutes < config.minHoldTimeMinutes) {
-        return {shouldExit: false, reason: 'holdTime'};
+    // Pull relevant data
+    if (!recentClosePrice) {
+      // If we can't get the current price, do nothing (hold).
+      return { shouldExit: false, reason: 'No recent close price' };
     }
 
-    if (holdTimeMinutes >= maxHoldTime) {
-        return {shouldExit: true, reason: 'holdTime'};
-    }
+    const atrValue = indicators.atr;
+    const atrPercent = (atrValue / recentClosePrice) * 100;
+    const atrStopPercent = 2 * atrPercent; // e.g. 3 × 2% = 6%
 
-    const dynamicStopLoss = config.dynamicStopLoss || false;
+    if (!atrValue || atrValue <= 0) {
+        return { shouldExit: false, reason: 'ATR not valid' };
+      }
 
-    let stopLossPct = config.stopLossPct || 1.5;
-    let takeProfitPct = config.takeProfitPct || 2.5;
+    if (peakPrice) {
+        const trailingStopPrice = peakPrice * (1 - (atrStopPercent / 100));
 
-    if (dynamicStopLoss) {
-        const atrPercent = (indicators.atr/recentClosePrice)*100;
-        stopLossPct = Math.max(3*atrPercent, config.stopLossPct);
-        takeProfitPct = Math.max(6*atrPercent, config.takeProfitPct);
-    }
-
-    if (current_pnl_percentage >= takeProfitPct) {
-        return {shouldExit: true, reason: 'takeProfit'};
-    }
-
-    if (current_pnl_percentage <= -stopLossPct) {
-        return {shouldExit: true, reason: 'stopLoss'};
-    }
-
-    // Add trailing stop loss check
-    if (config.trailingStopLoss && peakPrice) {
-        const trailingStopPct = ((recentClosePrice - peakPrice) / peakPrice) * 100;
-        if (trailingStopPct <= -config.trailingStopLoss) {
-            return {shouldExit: true, reason: 'trailingStop'};
+        // If price closes below trailingStopPrice, exit
+        if (recentClosePrice < trailingStopPrice) {
+            return { shouldExit: true, reason: 'trailingStopHit' };
         }
     }
+    
+    if (indicators.macd.shortEma < indicators.macd.longEma) {
+      return { shouldExit: true, reason: 'emaCrossExit' };
+    }
 
-    return {shouldExit: false, reason: 'holdTime'};
-}
+    const maxInitialStop = position.entryPrice - (config.stopLossPct * atrValue);
+    if (recentClosePrice < maxInitialStop) {
+        return { shouldExit: true, reason: 'maxInitialStopHit' };
+    }
+  
+    return { shouldExit: false, reason: 'No signals to exit' };
+  };
 
 
 const adjustHoldTimeWithProfit = (baseHoldTime: number, current_pnl_percentage: number) => {

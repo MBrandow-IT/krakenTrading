@@ -69,12 +69,12 @@ export const meanReversionConfig: TradingConfig = {
   export const trendFollowingConfig: TradingConfig = {
     portfolio_ID: 2,
     strategyType: 'trendFollowing',
-    rsiThreshold: 45,          // Enter as RSI crosses above 45 (momentum building)
+    rsiThreshold: 55,          // Enter as RSI crosses above 55 (momentum building)
     macdCrossNeeded: true,     // MACD cross confirms trend
     allowVolumeSpikes: true,   // Volume confirms trend
     dynamicStopLoss: true,     // ATR-based stops
-    stopLossPct: 2,          // Base stop loss (modified by ATR)
-    takeProfitPct: 6,        // 3:1 reward-to-risk ratio
+    stopLossPct: 1.2,          // Base stop loss (modified by ATR)
+    takeProfitPct: 5,        // 3:1 reward-to-risk ratio
     intervalMinutes: 15,       // Longer timeframe for trends
     rsiPeriod: 14,
     longEmaPeriod: 50,         // Longer EMAs for trend following
@@ -83,8 +83,8 @@ export const meanReversionConfig: TradingConfig = {
     volumeSpikeBarCount: 30,   // Longer volume lookback
     volumeSpikeFactor: 1.3,
     volatilityLookback: 50,    // Longer volatility lookback for trends
-    max_position_size: 0.06,
-    max_positions: 4,          // Fewer positions for trend following
+    max_position_size: 0.2,
+    max_positions: 5,          // Fewer positions for trend following
     maxVolatility: 1.5,        // Lower volatility threshold for trends
     minAtrPercent: 0.3,        // Minimum ATR for trend confirmation
     volatilityThreshold: 1.2,  // Lower volatility requirement
@@ -102,12 +102,12 @@ export const meanReversionConfig: TradingConfig = {
   export const longTrendFollowingConfig: TradingConfig = {
     portfolio_ID: 3,
     strategyType: 'trendFollowing',
-    rsiThreshold: 45,          // Enter as RSI crosses above 45 (momentum building)
+    rsiThreshold: 55,          // Enter as RSI crosses above 45 (momentum building)
     macdCrossNeeded: true,     // MACD cross confirms trend
     allowVolumeSpikes: true,   // Volume confirms trend
     dynamicStopLoss: true,     // ATR-based stops
-    stopLossPct: 3.5,          // Wider stop for crypto trends
-    takeProfitPct: 10.5,       // Crypto trends can run longer
+    stopLossPct: 1.2,          // Wider stop for crypto trends
+    takeProfitPct: 5,       // Crypto trends can run longer
     intervalMinutes: 30,       // Longer timeframe to filter noise
     rsiPeriod: 14,
     longEmaPeriod: 100,        // Longer EMAs to catch major trends
@@ -116,12 +116,45 @@ export const meanReversionConfig: TradingConfig = {
     volumeSpikeBarCount: 30,   // Longer volume lookback
     volumeSpikeFactor: 1.3,
     volatilityLookback: 50,    // Longer volatility lookback for trends
-    max_position_size: 0.06,
-    max_positions: 4,          // Fewer positions for trend following
+    max_position_size: 0.2,
+    max_positions: 5,          // Fewer positions for trend following
     maxVolatility: 2.5,        // Higher tolerance for crypto
     minAtrPercent: 0.3,        // Minimum ATR for trend confirmation
     volatilityThreshold: 1.2,  // Lower volatility requirement
-    maxHoldTimeMinutes: 1440,     // 24 hours
+    maxHoldTimeMinutes: 1440*3,     // 24 hours
+    minHoldTimeMinutes: 30,       // Avoid quick exits in trends
+    adjustHoldTimeWithVolatility: false,
+    minimumRequiredCandles: 100,
+    maxAtrPercent: null,
+    active: true,
+    tradeOnKraken: true,
+    tradeBalance: 100,
+    paperTrade: true,
+  };
+
+  export const longerTrendFollowingConfig: TradingConfig = {
+    portfolio_ID: 7,
+    strategyType: 'trendFollowing',
+    rsiThreshold: 55,          // Enter as RSI crosses above 45 (momentum building)
+    macdCrossNeeded: true,     // MACD cross confirms trend
+    allowVolumeSpikes: true,   // Volume confirms trend
+    dynamicStopLoss: true,     // ATR-based stops
+    stopLossPct: 1.2,          // Wider stop for crypto trends
+    takeProfitPct: 5,       // Crypto trends can run longer
+    intervalMinutes: 60,       // Longer timeframe to filter noise
+    rsiPeriod: 14,
+    longEmaPeriod: 100,        // Longer EMAs to catch major trends
+    shortEmaPeriod: 30,
+    signalEmaPeriod: 9,
+    volumeSpikeBarCount: 30,   // Longer volume lookback
+    volumeSpikeFactor: 1.3,
+    volatilityLookback: 50,    // Longer volatility lookback for trends
+    max_position_size: 0.2,
+    max_positions: 5,          // Fewer positions for trend following
+    maxVolatility: 2.5,        // Higher tolerance for crypto
+    minAtrPercent: 0.3,        // Minimum ATR for trend confirmation
+    volatilityThreshold: 1.2,  // Lower volatility requirement
+    maxHoldTimeMinutes: 1440*7,     // 24 hours
     minHoldTimeMinutes: 30,       // Avoid quick exits in trends
     adjustHoldTimeWithVolatility: false,
     minimumRequiredCandles: 100,
@@ -136,12 +169,12 @@ export const meanReversionConfig: TradingConfig = {
   export const scalpingConfig: TradingConfig = {
     portfolio_ID: 1,
     strategyType: 'scalping',
-    rsiThreshold: 60,          // Enter on strong momentum
+    rsiThreshold: 70,          // Enter on strong momentum
     macdCrossNeeded: true,     // Quick MACD confirmation
     allowVolumeSpikes: true,   // Volume is crucial for scalping
     dynamicStopLoss: false,     
-    stopLossPct: 1.2,          // Wider stops for crypto
-    takeProfitPct: 3.4,        // Maintaining 2:1 ratio
+    stopLossPct: 0.8,          // Wider stops for crypto
+    takeProfitPct: 3,        // Maintaining 2:1 ratio
     intervalMinutes: 1,        // Slightly longer for crypto
     rsiPeriod: 7,             // Faster RSI
     longEmaPeriod: 13,        // Shorter EMAs for faster signals
@@ -151,16 +184,49 @@ export const meanReversionConfig: TradingConfig = {
     volumeSpikeFactor: 1.8,    // Stronger volume confirmation
     volatilityLookback: 20,
     max_position_size: 0.06,   // Smaller position due to higher risk
-    max_positions: 16,         // More positions due to shorter holds
+    max_positions: 4,         // More positions due to shorter holds
     maxVolatility: 1.5,        // Adjusted up for crypto
     minAtrPercent: 0.1,        // Very small ATR requirement
     maxAtrPercent: 1.0,        // Maximum ATR for scalping
     volatilityThreshold: 0.8,  // Lower volatility for quick trades
-    maxHoldTimeMinutes: 30,       // 30 minutes
+    maxHoldTimeMinutes: 45,       // 30 minutes
     minHoldTimeMinutes: 1,        // Quick exits allowed
-    adjustHoldTimeWithVolatility: true,
+    adjustHoldTimeWithVolatility: false,
     minimumRequiredCandles: 13,
-    active: true,
+    active: false,
+    tradeOnKraken: false,
+    tradeBalance: 10000,
+    paperTrade: true,
+  };
+
+  export const scalpingConfig2: TradingConfig = {
+    portfolio_ID: 8,
+    strategyType: 'scalping',
+    rsiThreshold: 70,          // Enter on strong momentum
+    macdCrossNeeded: true,     // Quick MACD confirmation
+    allowVolumeSpikes: true,   // Volume is crucial for scalping
+    dynamicStopLoss: false,     
+    stopLossPct: 0.8,          // Wider stops for crypto
+    takeProfitPct: 3,        // Maintaining 2:1 ratio
+    intervalMinutes: 5,        // Slightly longer for crypto
+    rsiPeriod: 7,             // Faster RSI
+    longEmaPeriod: 13,        // Shorter EMAs for faster signals
+    shortEmaPeriod: 8,
+    signalEmaPeriod: 5,
+    volumeSpikeBarCount: 10,   // Quick volume confirmation
+    volumeSpikeFactor: 1.8,    // Stronger volume confirmation
+    volatilityLookback: 20,
+    max_position_size: 0.06,   // Smaller position due to higher risk
+    max_positions: 4,         // More positions due to shorter holds
+    maxVolatility: 1.5,        // Adjusted up for crypto
+    minAtrPercent: 0.1,        // Very small ATR requirement
+    maxAtrPercent: 1.0,        // Maximum ATR for scalping
+    volatilityThreshold: 0.8,  // Lower volatility for quick trades
+    maxHoldTimeMinutes: 90,       // 30 minutes
+    minHoldTimeMinutes: 1,        // Quick exits allowed
+    adjustHoldTimeWithVolatility: false,
+    minimumRequiredCandles: 13,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
@@ -194,7 +260,7 @@ export const meanReversionConfig: TradingConfig = {
     adjustHoldTimeWithVolatility: true,
     minimumRequiredCandles: 26,
     maxAtrPercent: null,
-    active: true,
+    active: false,
     tradeOnKraken: false,
     tradeBalance: 10000,
     paperTrade: true,
