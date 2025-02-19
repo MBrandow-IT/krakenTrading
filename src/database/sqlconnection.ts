@@ -1,6 +1,6 @@
-'use server'
+'use server';
 
-import PoolManager from './pool-manager'
+import PoolManager from './pool-manager';
 
 const sysConfig = {
   user: process.env.DB_USER,
@@ -8,52 +8,50 @@ const sysConfig = {
   server: process.env.DB_SERVER || 'localhost',
   database: process.env.DB_NAME,
   options: {
-      encrypt: true,
-      trustServerCertificate: true,
-      enableArithAbort: true
-  }
-}
+    encrypt: true,
+    trustServerCertificate: true,
+    enableArithAbort: true,
+  },
+};
 
 interface QueryConfig {
   text: string;
   values?: any[];
 }
 
-export async function executeQuery(
-  query: string | QueryConfig, 
-) {
-  const poolManager = PoolManager.getInstance()
-  let connectionConfig = {...sysConfig}
+export async function executeQuery(query: string | QueryConfig) {
+  const poolManager = PoolManager.getInstance();
+  let connectionConfig = { ...sysConfig };
 
-  const dbName = 'db_CryptoTracker'
+  const dbName = 'db_CryptoTracker';
 
   if (dbName) {
-    connectionConfig.database = dbName
+    connectionConfig.database = dbName;
   }
 
-  const poolName = `pool-${connectionConfig.database}`
+  const poolName = `pool-${connectionConfig.database}`;
 
   try {
     const pool = await poolManager.get({
       name: poolName,
-      config: connectionConfig
-    })
+      config: connectionConfig,
+    });
 
     if (typeof query === 'string') {
-      return await pool.request().query(query)
+      return await pool.request().query(query);
     }
-    
-    let request = pool.request()
+
+    let request = pool.request();
     query.values?.forEach((value, index) => {
-      request = request.input(`param${index}`, value)
-    })
-    return await request.query(query.text)
+      request = request.input(`param${index}`, value);
+    });
+    return await request.query(query.text);
   } catch (err: any) {
     if (err.number === 1205) {
-        throw err
+      throw err;
     } else {
-        console.error('SQL error', err)
-        throw err
+      console.error('SQL error', err);
+      throw err;
     }
   }
 }
@@ -70,7 +68,7 @@ export async function executeQueryWithRetry(
       // Check if it's a deadlock error (SQL Server error code 1205)
       if (err.number === 1205 && attempt < maxRetries) {
         console.log(`Deadlock detected, retry attempt ${attempt}/${maxRetries}`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
       throw err;

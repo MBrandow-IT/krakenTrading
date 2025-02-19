@@ -28,16 +28,16 @@ Note: All crypto trading carries significant risks, this bot is to be used as th
 ## Installation
 
 1. Clone the repository:
-git clone <repository-url>
-cd krakentrading
+   git clone <repository-url>
+   cd krakentrading
 
 2. Install dependencies:
-npm install
+   npm install
 
 3. Create a `.env` file in the root directory with the following variables:
-KRAKEN_API_KEY=your_kraken_api_key
-KRAKEN_API_SECRET=your_kraken_api_secret
-COINGECKO_API_KEY=your_coingecko_api_key
+   KRAKEN_API_KEY=your_kraken_api_key
+   KRAKEN_API_SECRET=your_kraken_api_secret
+   COINGECKO_API_KEY=your_coingecko_api_key
 
 The DB credentials are optional, if you don't want to configure a local SQL instance you can set the bot to not create any DB trades by setting the config.paperTrade to false.
 DB_USER=your_db_user
@@ -46,8 +46,7 @@ DB_SERVER=your_db_server
 DB_NAME=db_CryptoTracker
 
 4. Build the project:
-npm run build
-
+   npm run build
 
 ## Configuration
 
@@ -63,11 +62,10 @@ The trading strategies can be configured in the `src/config/tradingConfiguration
 ## Usage
 
 1. Start the trading bot in development mode:
-npm run dev
+   npm run dev
 
 2. Start the trading bot in production mode:
-npm run start
-
+   npm run start
 
 ## Database Setup
 
@@ -80,6 +78,7 @@ The bot supports multiple trading pairs which can be configured in `src/trackedC
 ## Risk Management
 
 The bot implements several risk management features:
+
 - Dynamic position sizing based on account balance
 - Adjustable stop-loss levels
 - Maximum position limits
@@ -88,6 +87,7 @@ The bot implements several risk management features:
 ## Monitoring
 
 The bot provides console logging for:
+
 - Trade entries and exits
 - Position updates
 - Error handling

@@ -12,7 +12,7 @@ GO
 /****** Object:  Table [dbo].[Trades]    Script Date: 2/14/2025 12:06:47 AM ******/
 SET ANSI_NULLS ON
 GO
-
+	
 SET QUOTED_IDENTIFIER ON
 GO
 

@@ -23,7 +23,7 @@ class PoolManager {
   private async set({ name, config }: PoolOptions): Promise<sql.ConnectionPool> {
     const pool = new sql.ConnectionPool(config);
     await pool.connect();
-    
+
     // Extend pool's close method to remove from pool map
     const originalClose = pool.close.bind(pool);
 
@@ -54,7 +54,7 @@ class PoolManager {
   }
 
   public async closeAll(): Promise<void> {
-    const promises = Array.from(this.pools.values()).map(pool => pool.close());
+    const promises = Array.from(this.pools.values()).map((pool) => pool.close());
     await Promise.all(promises);
   }
 }
