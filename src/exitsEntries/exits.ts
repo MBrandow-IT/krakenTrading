@@ -17,11 +17,7 @@ export const analyzeExit = (
 
   const atrValue = indicators.atr;
   const atrPercent = (atrValue / recentClosePrice) * 100;
-  const atrStopPercent = 2 * atrPercent; // e.g. 3 × 2% = 6%
-
-  if (!atrValue || atrValue <= 0) {
-    return { shouldExit: false, reason: 'ATR not valid' };
-  }
+  const atrStopPercent = 3 * atrPercent; // e.g. 3 × 2% = 6%
 
   if (peakPrice) {
     const trailingStopPrice = peakPrice * (1 - atrStopPercent / 100);
@@ -32,14 +28,9 @@ export const analyzeExit = (
     }
   }
 
-  if (indicators.macd.shortEma < indicators.macd.longEma) {
-    return { shouldExit: true, reason: 'emaCrossExit' };
-  }
-
-  const maxInitialStop = position.entryPrice - config.stopLossPct * atrValue;
-  if (recentClosePrice < maxInitialStop) {
-    return { shouldExit: true, reason: 'maxInitialStopHit' };
-  }
+  //   if (indicators.macd.shortEma < indicators.macd.longEma) {
+  //     return { shouldExit: true, reason: 'emaCrossExit' };
+  //   }
 
   return { shouldExit: false, reason: 'No signals to exit' };
 };

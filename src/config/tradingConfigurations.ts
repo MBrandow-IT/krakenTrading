@@ -22,7 +22,7 @@ export interface TradingConfig {
   maxHoldTimeMinutes: number; // The maximum hold time, this is the maximum hold time of the strategy
   minHoldTimeMinutes: number; // The minimum hold time, this is the minimum hold time of the strategy
   adjustHoldTimeWithVolatility: boolean; // Whether the strategy adjusts the hold time with volatility
-  minimumRequiredCandles: number; // The minimum required candles, this is the minimum required candles of the strategy
+  minimumRequiredCandles?: number; // The minimum required candles, this is the minimum required candles of the strategy
   maxAtrPercent: number | null; // The maximum ATR percentage, this is the maximum ATR percentage of the strategy
   portfolio_ID: number; // The portfolio ID, this is the portfolio ID of the strategy
   active: boolean; // Whether the strategy is active, if false the strategy will not be used at all
@@ -59,7 +59,7 @@ export const meanReversionConfig: TradingConfig = {
   adjustHoldTimeWithVolatility: true,
   minimumRequiredCandles: 26,
   maxAtrPercent: null,
-  active: true,
+  active: false,
   tradeOnKraken: false,
   tradeBalance: 10000,
   paperTrade: true,
@@ -102,7 +102,7 @@ export const trendFollowingConfig: TradingConfig = {
 export const longTrendFollowingConfig: TradingConfig = {
   portfolio_ID: 3,
   strategyType: 'trendFollowing',
-  rsiThreshold: 55, // Enter as RSI crosses above 45 (momentum building)
+  rsiThreshold: 45, // Enter as RSI crosses above 45 (momentum building)
   macdCrossNeeded: true, // MACD cross confirms trend
   allowVolumeSpikes: true, // Volume confirms trend
   dynamicStopLoss: true, // ATR-based stops
@@ -116,18 +116,17 @@ export const longTrendFollowingConfig: TradingConfig = {
   volumeSpikeBarCount: 30, // Longer volume lookback
   volumeSpikeFactor: 1.3,
   volatilityLookback: 50, // Longer volatility lookback for trends
-  max_position_size: 0.2,
-  max_positions: 5, // Fewer positions for trend following
   maxVolatility: 2.5, // Higher tolerance for crypto
   minAtrPercent: 0.3, // Minimum ATR for trend confirmation
   volatilityThreshold: 1.2, // Lower volatility requirement
   maxHoldTimeMinutes: 1440 * 3, // 24 hours
   minHoldTimeMinutes: 30, // Avoid quick exits in trends
   adjustHoldTimeWithVolatility: false,
-  minimumRequiredCandles: 100,
   maxAtrPercent: null,
   active: true,
   tradeOnKraken: true,
+  max_positions: 5, // Fewer positions for trend following
+  max_position_size: 0.2,
   tradeBalance: 100,
   paperTrade: true,
 };

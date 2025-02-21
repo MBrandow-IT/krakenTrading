@@ -321,7 +321,6 @@ export const trackedCoins = [
   'VINE/USD',
   'VIRTUAL/USD',
   'WEN/USD',
-  'WOO/USD',
   'W/USD',
   'WAXL/USD',
   'WBTC/USD',

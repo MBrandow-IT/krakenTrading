@@ -68,7 +68,6 @@ interface Strategy {
 export interface Portfolio {
   balance: number;
   positions: Map<string, Position>;
-  availableBalance: number;
 }
 
 export class TradingEngine {
@@ -92,7 +91,6 @@ export class TradingEngine {
     this.portfolio = {
       balance: 0,
       positions: this.activePositions, // Initialize with activePositions
-      availableBalance: 0,
     };
   }
 
@@ -205,8 +203,8 @@ export class TradingEngine {
             buffer.push(lastCandle);
 
             const requiredCandles = Math.max(
-              this.config.longEmaPeriod * 4, // For MACD calculation
-              this.config.minimumRequiredCandles
+              this.config.longEmaPeriod * 4 // For MACD calculation
+              //   this.config.minimumRequiredCandles
             );
 
             while (buffer.length > requiredCandles) {
@@ -254,10 +252,10 @@ export class TradingEngine {
   }
 
   private updateIndicators(symbol: string, candles: Candle[]): void {
-    if (candles.length < this.config.minimumRequiredCandles) {
-      // console.log(`[${symbol}] Not enough candles for indicators: ${candles.length}/${this.config.minimumRequiredCandles}`);
-      return;
-    }
+    // if (candles.length < this.config.minimumRequiredCandles) {
+    //   // console.log(`[${symbol}] Not enough candles for indicators: ${candles.length}/${this.config.minimumRequiredCandles}`);
+    //   return;
+    // }
 
     const currentIndicators = {
       rsi: {
@@ -486,8 +484,9 @@ export class TradingEngine {
         const exitFee = recentClosePrice * position.quantity * feeRate;
         const totalFees = entryFee + exitFee;
 
-        this.portfolio.balance += recentClosePrice * position.quantity - exitFee;
-        this.portfolio.availableBalance = this.portfolio.balance;
+        // Add just the PnL (profit/loss) to the balance
+        const pnl = (recentClosePrice - position.entryPrice) * position.quantity - totalFees;
+        this.portfolio.balance += pnl;
         this.portfolio.positions.delete(symbol);
         this.activePositions.delete(symbol);
 
@@ -668,7 +667,6 @@ export class TradingEngine {
         // Update local portfolio state
         this.portfolio.positions.set(symbol, newPosition);
         // this.portfolio.balance -= (recentClosePrice * positionSize);
-        this.portfolio.availableBalance = this.portfolio.balance;
         this.activePositions.set(symbol, newPosition);
 
         // TODO: post Kraken Trade first
@@ -695,7 +693,6 @@ export class TradingEngine {
           // Rollback local portfolio changes if DB insert fails
           this.portfolio.positions.delete(symbol);
           // this.portfolio.balance += (recentClosePrice * positionSize);
-          this.portfolio.availableBalance = this.portfolio.balance;
         }
       }
     }
@@ -749,7 +746,7 @@ export class TradingEngine {
     // 5. Add safety checks
     const finalPositionSize = Math.min(positionSize, maxPositionByAccount / current_price);
 
-    return finalPositionSize;
+    return maxPositionByAccount / current_price;
   };
 
   public async closeAllPositions(): Promise<void> {

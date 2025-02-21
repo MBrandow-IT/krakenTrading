@@ -29,16 +29,15 @@ export const portfolio = async (config: TradingConfig): Promise<Portfolio> => {
   return {
     balance: config.tradeBalance,
     positions: new Map(),
-    availableBalance: config.tradeBalance,
   };
 };
 
-const getBalance = async () => {
-  try {
-    const balance = await kraken.api('Balance');
-    console.log('Account Balance:', balance.result);
-    return balance.result.ZUSD;
-  } catch (error) {
-    console.error('Error getting balance:', error);
-  }
-};
+// const getBalance = async () => {
+//   try {
+//     const balance = await kraken.api('Balance');
+//     console.log('Account Balance:', balance.result);
+//     return balance.result.ZUSD;
+//   } catch (error) {
+//     console.error('Error getting balance:', error);
+//   }
+// };
